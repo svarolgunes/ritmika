@@ -20,6 +20,8 @@ type Props = {
   onTapEvent: (staffId: string, eventId: string) => void;
   onTapBar: (staffId: string, bar: number) => void;
   onTapLabel?: (staffId: string) => void;
+  /** Play mode: no cursor, no dashed gaps and nothing to tap. */
+  readOnly?: boolean;
 };
 
 const headCx = (system: SystemLayout, b: number, offset: number, sig: TimeSig) => noteX(system, b, offset, sig) + HEAD_RX + 2;
@@ -40,8 +42,9 @@ function BarContents(props: {
   y: number;
   cursor: Cursor | null;
   active: Record<string, string>;
+  showGaps: boolean;
 }) {
-  const { staff, bar, barIndex, b, system, sig, y, cursor, active } = props;
+  const { staff, bar, barIndex, b, system, sig, y, cursor, active, showGaps } = props;
   const capacity = barCapacity(sig);
   const offsets = eventOffsets(bar);
   const used = barUsed(bar);
@@ -56,7 +59,7 @@ function BarContents(props: {
 
   const parts: ReactNode[] = [];
 
-  if (used < capacity) {
+  if (showGaps && used < capacity) {
     const gapLeft = used === 0 ? left + 8 : noteX(system, b, used, sig) + 2;
     parts.push(
       <Rect
@@ -135,7 +138,9 @@ function BarContents(props: {
 }
 
 const SystemView = memo(function SystemView(props: Props & { system: SystemLayout; isLast: boolean }) {
-  const { song, cursor, active, width, system, isLast, highlightStaff, onTapEvent, onTapBar, onTapLabel } = props;
+  const { song, active, width, system, isLast, onTapEvent, onTapBar, onTapLabel, readOnly } = props;
+  const cursor = readOnly ? null : props.cursor;
+  const highlightStaff = !readOnly && props.highlightStaff;
   const height = song.staves.length * ROW_H + SYSTEM_GAP;
   const endX = barX(system, system.count);
   const bars = Array.from({ length: system.count }, (_, b) => system.first + b);
@@ -187,6 +192,7 @@ const SystemView = memo(function SystemView(props: Props & { system: SystemLayou
                       y={y}
                       cursor={cursor}
                       active={active}
+                      showGaps={!readOnly}
                     />
                     {final ? (
                       <G>
@@ -211,36 +217,40 @@ const SystemView = memo(function SystemView(props: Props & { system: SystemLayou
         const top = r * ROW_H;
         return (
           <View key={staff.id} style={{ position: 'absolute', left: 0, right: 0, top, height: ROW_H }} pointerEvents="box-none">
-            {bars.map((barIndex, b) => (
-              <Pressable
-                key={`bar${barIndex}`}
-                accessibilityRole="button"
-                accessibilityLabel={`${instrument(staff.instrument).name.en} bar ${barIndex + 1}`}
-                onPress={() => onTapBar(staff.id, barIndex)}
-                style={[styles.hit, { left: barX(system, b), width: system.barW }]}
-              />
-            ))}
-            {bars.map((barIndex, b) => {
-              const bar = staff.bars[barIndex];
-              const offsets = eventOffsets(bar);
-              return bar.map((e, i) => {
-                const x0 = noteX(system, b, offsets[i], song.sig);
-                const x1 = noteX(system, b, offsets[i] + eventUnits(e), song.sig);
-                return (
+            {!readOnly && (
+              <>
+                {bars.map((barIndex, b) => (
                   <Pressable
-                    key={e.id}
+                    key={`bar${barIndex}`}
                     accessibilityRole="button"
-                    accessibilityLabel={`${e.rest ? 'rest' : 'note'} 1/${e.value}${e.dotted ? ' dotted' : ''}`}
-                    onPress={() => onTapEvent(staff.id, e.id)}
-                    style={[styles.hit, { left: x0, width: Math.max(18, x1 - x0) }]}
+                    accessibilityLabel={`${instrument(staff.instrument).name.en} bar ${barIndex + 1}`}
+                    onPress={() => onTapBar(staff.id, barIndex)}
+                    style={[styles.hit, { left: barX(system, b), width: system.barW }]}
                   />
-                );
-              });
-            })}
+                ))}
+                {bars.map((barIndex, b) => {
+                  const bar = staff.bars[barIndex];
+                  const offsets = eventOffsets(bar);
+                  return bar.map((e, i) => {
+                    const x0 = noteX(system, b, offsets[i], song.sig);
+                    const x1 = noteX(system, b, offsets[i] + eventUnits(e), song.sig);
+                    return (
+                      <Pressable
+                        key={e.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${e.rest ? 'rest' : 'note'} 1/${e.value}${e.dotted ? ' dotted' : ''}`}
+                        onPress={() => onTapEvent(staff.id, e.id)}
+                        style={[styles.hit, { left: x0, width: Math.max(18, x1 - x0) }]}
+                      />
+                    );
+                  });
+                })}
+              </>
+            )}
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={instrument(staff.instrument).name.en}
-              disabled={!onTapLabel}
+              disabled={readOnly || !onTapLabel}
               onPress={() => onTapLabel?.(staff.id)}
               style={[styles.label, staff.muted && { opacity: 0.45 }]}
             >

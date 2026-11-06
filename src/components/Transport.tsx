@@ -12,10 +12,10 @@ import { colors, radius, shadow } from './theme';
 type Playback = ReturnType<typeof usePlayback>;
 
 /** The metronome's beats for one bar; the one sounding lights up. */
-function BeatDots({ sig, beat }: { sig: TimeSig; beat: Playback['beat'] }) {
+function BeatDots({ sig, beat, centered }: { sig: TimeSig; beat: Playback['beat']; centered?: boolean }) {
   const accents = clickAccents(sig);
   return (
-    <View style={styles.dots} accessibilityRole="none">
+    <View style={[styles.dots, centered && styles.centered]} accessibilityRole="none">
       {accents.map((a, i) => {
         const on = beat?.beat === i;
         const size = a === 2 ? 18 : a === 1 ? 14 : 11;
@@ -39,11 +39,14 @@ export function Transport({
   playback,
   onTempo,
   onSig,
+  compact,
 }: {
   song: Song;
   playback: Playback;
   onTempo: (tempo: number) => void;
   onSig: (sig: TimeSig) => void;
+  /** Play mode: only play, tempo and the beat; no time signature or playback options. */
+  compact?: boolean;
 }) {
   const settings = useSettings();
   const { t } = settings;
@@ -89,34 +92,38 @@ export function Transport({
           </Pressable>
         </View>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t.chooseTimeSig}
-          onPress={() => setSigOpen(true)}
-          style={({ pressed }) => [styles.sig, pressed && styles.pressed]}
-        >
-          <Text style={styles.sigTop}>{song.sig.beats}</Text>
-          <View style={styles.sigLine} />
-          <Text style={styles.sigTop}>{song.sig.unit}</Text>
-        </Pressable>
+        {!compact && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t.chooseTimeSig}
+            onPress={() => setSigOpen(true)}
+            style={({ pressed }) => [styles.sig, pressed && styles.pressed]}
+          >
+            <Text style={styles.sigTop}>{song.sig.beats}</Text>
+            <View style={styles.sigLine} />
+            <Text style={styles.sigTop}>{song.sig.unit}</Text>
+          </Pressable>
+        )}
       </View>
 
-      <View style={styles.row}>
-        <Text style={styles.metronome}>{t.metronome}</Text>
-        <BeatDots sig={song.sig} beat={playback.beat} />
+      <View style={[styles.row, compact && styles.centered]}>
+        {!compact && <Text style={styles.metronome}>{t.metronome}</Text>}
+        <BeatDots sig={song.sig} beat={playback.beat} centered={compact} />
       </View>
 
-      <View style={styles.toggles}>
-        <Chip
-          small
-          label={settings.notesAudible ? `🔊 ${t.notesOn}` : `🔇 ${t.notesOff}`}
-          active={settings.notesAudible}
-          color={colors.success}
-          onPress={() => settings.set({ notesAudible: !settings.notesAudible })}
-        />
-        <Chip small label={`🔁 ${t.loop}`} active={settings.loop} onPress={() => settings.set({ loop: !settings.loop })} />
-        <Chip small label={`⏱ ${t.countIn}`} active={settings.countIn} onPress={() => settings.set({ countIn: !settings.countIn })} />
-      </View>
+      {!compact && (
+        <View style={styles.toggles}>
+          <Chip
+            small
+            label={settings.notesAudible ? `🔊 ${t.notesOn}` : `🔇 ${t.notesOff}`}
+            active={settings.notesAudible}
+            color={colors.success}
+            onPress={() => settings.set({ notesAudible: !settings.notesAudible })}
+          />
+          <Chip small label={`🔁 ${t.loop}`} active={settings.loop} onPress={() => settings.set({ loop: !settings.loop })} />
+          <Chip small label={`⏱ ${t.countIn}`} active={settings.countIn} onPress={() => settings.set({ countIn: !settings.countIn })} />
+        </View>
+      )}
 
       <Sheet visible={sigOpen} title={t.chooseTimeSig} onClose={() => setSigOpen(false)} closeLabel={t.close}>
         <View style={styles.sigGrid}>
@@ -182,6 +189,7 @@ const styles = StyleSheet.create({
   metronome: { fontSize: 13, fontWeight: '800', color: colors.muted, textTransform: 'uppercase' },
   dots: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   dot: { backgroundColor: colors.border },
+  centered: { justifyContent: 'center' },
   toggles: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   sigGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   sigOption: {

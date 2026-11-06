@@ -12,6 +12,10 @@ Three tabs:
 | **Topluluk** (Ensemble) | Several instruments, each on its own stave, with their bars lined up like a score. Add, mute, change or remove instruments. |
 | **Ayarlar** (Settings) | Language (Turkish / English), metronome and note volume, short how-to. |
 
+### Play mode and edit mode
+
+The ✏️ **Düzenle / Edit** button at the top right switches the editor on and off, and the app remembers the choice. With editing off (the default), the screen keeps only what's needed to play: the play button, the tempo, the beat dots, the score and the ✨ examples. The palette, bar tools, time signature picker, playback options, cursor, dashed gaps and hints all appear when editing is on.
+
 ### The stave editor
 
 - **Values:** whole, half, quarter, eighth and sixteenth notes, the matching rests, and dotted versions (except the dotted sixteenth).
