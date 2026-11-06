@@ -13,9 +13,11 @@ export type Settings = {
   notesAudible: boolean;
   loop: boolean;
   countIn: boolean;
+  /** Editing tools are shown; when off, the screen only has what's needed to play. */
+  editing: boolean;
 };
 
-const DEFAULTS: Settings = { lang: 'tr', clickVolume: 0.7, noteVolume: 1, notesAudible: true, loop: true, countIn: true };
+const DEFAULTS: Settings = { lang: 'tr', clickVolume: 0.7, noteVolume: 1, notesAudible: true, loop: true, countIn: true, editing: false };
 
 type SettingsApi = Settings & { t: Strings; set: (patch: Partial<Settings>) => void };
 
@@ -37,6 +39,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           notesAudible: typeof saved.notesAudible === 'boolean' ? saved.notesAudible : s.notesAudible,
           loop: typeof saved.loop === 'boolean' ? saved.loop : s.loop,
           countIn: typeof saved.countIn === 'boolean' ? saved.countIn : s.countIn,
+          editing: typeof saved.editing === 'boolean' ? saved.editing : s.editing,
         }));
       })
       .catch(() => undefined);

@@ -82,7 +82,7 @@ type Props = {
 };
 
 export function EditorScreen({ storageKey, title, subtitle, presets, ensemble }: Props) {
-  const { t, lang } = useSettings();
+  const { t, lang, editing, set } = useSettings();
   const editor = useEditor(storageKey, () => songFromPreset(presets[0]));
   const { song, cursor } = editor;
   const playback = usePlayback(song);
@@ -111,8 +111,13 @@ export function EditorScreen({ storageKey, title, subtitle, presets, ensemble }:
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <Header
         title={title}
-        subtitle={subtitle}
-        right={<Chip label={`✨ ${t.examples}`} onPress={() => setSheet('presets')} />}
+        subtitle={editing ? subtitle : undefined}
+        right={
+          <>
+            <Chip label="✨" accessibilityLabel={t.examples} onPress={() => setSheet('presets')} />
+            <Chip label={`✏️ ${t.edit}`} active={editing} onPress={() => set({ editing: !editing })} />
+          </>
+        }
       />
 
       <Transport
@@ -120,10 +125,11 @@ export function EditorScreen({ storageKey, title, subtitle, presets, ensemble }:
         playback={playback}
         onTempo={(tempo) => editor.update((s) => setTempo(s, tempo))}
         onSig={(sig) => editor.edit((s, c) => setTimeSig(s, c, sig))}
+        compact={!editing}
       />
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scroll}>
-        <Card style={{ paddingHorizontal: 6 }}>
+        <Card style={{ paddingHorizontal: 6, paddingBottom: editing ? 12 : 4 }}>
           <View onLayout={(e) => setWidth(Math.floor(e.nativeEvent.layout.width))}>
             {width > 0 && (
               <Score
@@ -135,51 +141,54 @@ export function EditorScreen({ storageKey, title, subtitle, presets, ensemble }:
                 onTapEvent={(staffId, eventId) => editor.setCursor((s, c) => selectEvent(s, c, staffId, eventId))}
                 onTapBar={(staffId, bar) => editor.setCursor((s) => cursorToBarEnd(s, staffId, bar))}
                 onTapLabel={ensemble ? (staffId) => setSheet({ staffId }) : undefined}
+                readOnly={!editing}
               />
             )}
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.barActions}>
-            {!ensemble && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t.chooseInstrument}
-                onPress={() => setSheet('instrument')}
-                style={[styles.instrumentChip, { borderColor: instrument(cursorStaff.instrument).color }]}
-              >
-                <Text style={{ fontSize: 18 }}>{instrument(cursorStaff.instrument).emoji}</Text>
-                <Text style={styles.instrumentChipText}>{instrument(cursorStaff.instrument).name[lang]} ▾</Text>
-              </Pressable>
-            )}
-            {ensemble && song.staves.length < MAX_STAVES && (
-              <Chip label={`➕ ${t.addInstrument}`} color={colors.accent} active onPress={() => setSheet('add')} />
-            )}
-            <Chip label={`＋ ${t.addBar}`} onPress={() => editor.edit(addBar)} />
-            <Chip label={`－ ${t.removeBar}`} onPress={() => editor.edit((s, c) => removeBar(s, c, c.bar))} />
-            <Chip label={t.fillRests} onPress={() => editor.update(fillAll)} />
-            <Chip
-              label={confirmClear ? `⚠️ ${t.clearConfirm}` : `🗑 ${t.clear}`}
-              active={confirmClear}
-              color={colors.error}
-              onPress={() => {
-                if (confirmClear) {
-                  playback.stop();
-                  editor.replace(clearSong(song));
-                  setConfirmClear(false);
-                } else setConfirmClear(true);
-              }}
-            />
-          </ScrollView>
+          {editing && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.barActions}>
+              {!ensemble && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t.chooseInstrument}
+                  onPress={() => setSheet('instrument')}
+                  style={[styles.instrumentChip, { borderColor: instrument(cursorStaff.instrument).color }]}
+                >
+                  <Text style={{ fontSize: 18 }}>{instrument(cursorStaff.instrument).emoji}</Text>
+                  <Text style={styles.instrumentChipText}>{instrument(cursorStaff.instrument).name[lang]} ▾</Text>
+                </Pressable>
+              )}
+              {ensemble && song.staves.length < MAX_STAVES && (
+                <Chip label={`➕ ${t.addInstrument}`} color={colors.accent} active onPress={() => setSheet('add')} />
+              )}
+              <Chip label={`＋ ${t.addBar}`} onPress={() => editor.edit(addBar)} />
+              <Chip label={`－ ${t.removeBar}`} onPress={() => editor.edit((s, c) => removeBar(s, c, c.bar))} />
+              <Chip label={t.fillRests} onPress={() => editor.update(fillAll)} />
+              <Chip
+                label={confirmClear ? `⚠️ ${t.clearConfirm}` : `🗑 ${t.clear}`}
+                active={confirmClear}
+                color={colors.error}
+                onPress={() => {
+                  if (confirmClear) {
+                    playback.stop();
+                    editor.replace(clearSong(song));
+                    setConfirmClear(false);
+                  } else setConfirmClear(true);
+                }}
+              />
+            </ScrollView>
+          )}
         </Card>
-        <Text style={styles.hint}>{ensemble ? t.ensembleHint : t.hint}</Text>
+        {editing && <Text style={styles.hint}>{ensemble ? t.ensembleHint : t.hint}</Text>}
       </ScrollView>
 
-      {editor.message && (
+      {editing && editor.message && (
         <View style={styles.toastWrap} pointerEvents="none">
           <Text style={styles.toast}>{messageText(editor.message, t)}</Text>
         </View>
       )}
 
-      <Palette editor={editor} />
+      {editing && <Palette editor={editor} />}
 
       <Sheet visible={sheet === 'presets'} title={t.examples} onClose={() => setSheet(null)} closeLabel={t.close}>
         <View style={{ gap: 10 }}>

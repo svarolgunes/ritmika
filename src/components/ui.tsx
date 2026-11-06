@@ -67,12 +67,12 @@ export function Sheet({ visible, title, onClose, children, closeLabel }: { visib
   );
 }
 
-export function Header({ title, subtitle, right }: { title: string; subtitle: string; right?: ReactNode }) {
+export function Header({ title, subtitle, right }: { title: string; subtitle?: string; right?: ReactNode }) {
   return (
     <View style={styles.header}>
       <View style={{ flex: 1 }}>
         <Text style={styles.logo}>{title}</Text>
-        <Text style={styles.subtitle}>{subtitle}</Text>
+        {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
       </View>
       <View style={styles.headerRight}>{right}</View>
     </View>

@@ -34,6 +34,7 @@ const tr = {
   mute: 'Sustur',
   unmute: 'Sesi aç',
   close: 'Kapat',
+  edit: 'Düzenle',
   chooseTimeSig: 'Ölçü seç',
   noRoom: (left: string) => (left ? `Bu ölçüde yer yok. Kalan: ${left}` : 'Bu ölçüde yer kalmadı.'),
   dropped: (n: number) => `${n} nota yeni ölçüye sığmadı ve silindi.`,
@@ -53,6 +54,7 @@ const tr = {
     '"Notalar" düğmesiyle notaları sessize alıp yalnızca metronomla kendin çalabilirsin.',
     '"Hazırlık" açıkken başlamadan önce bir ölçü metronom duyarsın.',
     'Eksik kalan ölçülerin sonu sessiz geçer; istersen "Boşluğa sus koy" ile doldur.',
+    'Notaları yazmak için sağ üstteki "Düzenle" düğmesine dokun. Kapatınca ekranda yalnızca çalmak için gerekenler kalır.',
   ],
   units: { 16: 'onaltılık', 8: 'sekizlik', 4: 'dörtlük', 2: 'ikilik', 1: 'birlik' } as Record<number, string>,
 };
@@ -93,6 +95,7 @@ const en: Strings = {
   mute: 'Mute',
   unmute: 'Unmute',
   close: 'Close',
+  edit: 'Edit',
   chooseTimeSig: 'Time signature',
   noRoom: (left: string) => (left ? `No room in this bar. Left: ${left}` : 'This bar is full.'),
   dropped: (n: number) => `${n} note(s) did not fit the new time signature and were removed.`,
@@ -112,6 +115,7 @@ const en: Strings = {
     'Use the "Notes" button to silence the notes and play along with just the metronome.',
     'With "Count-in" on, you hear one bar of metronome before the music starts.',
     'Unfinished bars end in silence; use "Fill gaps with rests" to write them out.',
+    'Tap "Edit" at the top right to write notes. Turn it off and only what you need to play stays on screen.',
   ],
   units: { 16: 'sixteenth', 8: 'eighth', 4: 'quarter', 2: 'half', 1: 'whole' },
 };
