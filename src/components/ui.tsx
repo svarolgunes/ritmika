@@ -11,7 +11,9 @@ export function Chip({
   color = colors.primary,
   style,
   accessibilityLabel,
+  small,
 }: {
+  small?: boolean;
   label: string;
   onPress: () => void;
   active?: boolean;
@@ -30,12 +32,13 @@ export function Chip({
       }}
       style={({ pressed }) => [
         styles.chip,
+        small && styles.chipSmall,
         active ? { backgroundColor: color, borderColor: color } : { borderColor: colors.border },
         pressed && styles.pressed,
         style,
       ]}
     >
-      <Text style={[styles.chipText, active && { color: '#fff' }]} numberOfLines={1}>
+      <Text style={[styles.chipText, small && styles.chipTextSmall, active && { color: '#fff' }]} numberOfLines={1}>
         {label}
       </Text>
     </Pressable>
@@ -87,6 +90,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   chipText: { fontSize: 15, fontWeight: '800', color: colors.ink },
+  chipSmall: { minHeight: 34, paddingHorizontal: 10, borderRadius: 17 },
+  chipTextSmall: { fontSize: 13 },
   pressed: { transform: [{ scale: 0.95 }] },
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 12, ...shadow },
   backdrop: { flex: 1, backgroundColor: 'rgba(43,35,64,0.35)', justifyContent: 'center', padding: 20 },

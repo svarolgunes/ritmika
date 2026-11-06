@@ -108,13 +108,14 @@ export function Transport({
 
       <View style={styles.toggles}>
         <Chip
+          small
           label={settings.notesAudible ? `🔊 ${t.notesOn}` : `🔇 ${t.notesOff}`}
           active={settings.notesAudible}
           color={colors.success}
           onPress={() => settings.set({ notesAudible: !settings.notesAudible })}
         />
-        <Chip label={`🔁 ${t.loop}`} active={settings.loop} onPress={() => settings.set({ loop: !settings.loop })} />
-        <Chip label={`⏱ ${t.countIn}`} active={settings.countIn} onPress={() => settings.set({ countIn: !settings.countIn })} />
+        <Chip small label={`🔁 ${t.loop}`} active={settings.loop} onPress={() => settings.set({ loop: !settings.loop })} />
+        <Chip small label={`⏱ ${t.countIn}`} active={settings.countIn} onPress={() => settings.set({ countIn: !settings.countIn })} />
       </View>
 
       <Sheet visible={sigOpen} title={t.chooseTimeSig} onClose={() => setSigOpen(false)} closeLabel={t.close}>
@@ -148,7 +149,7 @@ export function Transport({
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 12, gap: 10, marginHorizontal: 16, ...shadow },
+  card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 12, gap: 8, marginHorizontal: 16, ...shadow },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   play: {
     width: 64,
@@ -181,7 +182,7 @@ const styles = StyleSheet.create({
   metronome: { fontSize: 13, fontWeight: '800', color: colors.muted, textTransform: 'uppercase' },
   dots: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   dot: { backgroundColor: colors.border },
-  toggles: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  toggles: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   sigGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   sigOption: {
     width: 92,
