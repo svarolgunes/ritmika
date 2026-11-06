@@ -1,0 +1,132 @@
+export type Lang = 'tr' | 'en';
+
+const tr = {
+  appName: 'Ritmika',
+  tabSolo: 'Ritim',
+  tabEnsemble: 'Topluluk',
+  tabSettings: 'Ayarlar',
+  soloSubtitle: 'Notaları diz, metronomla çal!',
+  ensembleSubtitle: 'Her enstrümana bir dizek',
+  play: 'Çal',
+  stop: 'Dur',
+  tempo: 'Tempo',
+  bpm: 'vuruş/dk',
+  timeSig: 'Ölçü',
+  notesOn: 'Notalar açık',
+  notesOff: 'Notalar sessiz',
+  loop: 'Döngü',
+  countIn: 'Hazırlık',
+  metronome: 'Metronom',
+  note: 'Nota',
+  rest: 'Sus',
+  dot: 'Noktalı',
+  delete: 'Sil',
+  addBar: 'Ölçü ekle',
+  removeBar: 'Ölçüyü sil',
+  fillRests: 'Boşluğa sus koy',
+  clear: 'Temizle',
+  clearConfirm: 'Emin misin?',
+  examples: 'Örnekler',
+  instrument: 'Enstrüman',
+  chooseInstrument: 'Enstrüman seç',
+  addInstrument: 'Enstrüman ekle',
+  removeInstrument: 'Bu dizeği sil',
+  mute: 'Sustur',
+  unmute: 'Sesi aç',
+  close: 'Kapat',
+  chooseTimeSig: 'Ölçü seç',
+  noRoom: (left: string) => (left ? `Bu ölçüde yer yok. Kalan: ${left}` : 'Bu ölçüde yer kalmadı.'),
+  dropped: (n: number) => `${n} nota yeni ölçüye sığmadı ve silindi.`,
+  cantDot: 'Onaltılık nota noktalı olamaz.',
+  hint: 'Bir değere dokun, imleçteki yere eklensin. Bir notaya dokunup seçersen onu değiştirirsin.',
+  ensembleHint: 'Bir dizeğe dokunarak onu seç, sonra notaları ekle. Soldaki simgeye dokunarak enstrümanı değiştir.',
+  settingsTitle: 'Ayarlar',
+  language: 'Dil',
+  clickVolume: 'Metronom sesi',
+  noteVolume: 'Nota sesi',
+  low: 'Kısık',
+  medium: 'Orta',
+  high: 'Yüksek',
+  howTo: 'Nasıl kullanılır?',
+  howToItems: [
+    'Metronom çalarken hep tıklar; ilk vuruş daha yüksek duyulur.',
+    '"Notalar" düğmesiyle notaları sessize alıp yalnızca metronomla kendin çalabilirsin.',
+    '"Hazırlık" açıkken başlamadan önce bir ölçü metronom duyarsın.',
+    'Eksik kalan ölçülerin sonu sessiz geçer; istersen "Boşluğa sus koy" ile doldur.',
+  ],
+  units: { 16: 'onaltılık', 8: 'sekizlik', 4: 'dörtlük', 2: 'ikilik', 1: 'birlik' } as Record<number, string>,
+};
+
+export type Strings = typeof tr;
+
+const en: Strings = {
+  appName: 'Ritmika',
+  tabSolo: 'Rhythm',
+  tabEnsemble: 'Ensemble',
+  tabSettings: 'Settings',
+  soloSubtitle: 'Write notes, play with the metronome!',
+  ensembleSubtitle: 'One staff for each instrument',
+  play: 'Play',
+  stop: 'Stop',
+  tempo: 'Tempo',
+  bpm: 'bpm',
+  timeSig: 'Time',
+  notesOn: 'Notes on',
+  notesOff: 'Notes silent',
+  loop: 'Loop',
+  countIn: 'Count-in',
+  metronome: 'Metronome',
+  note: 'Note',
+  rest: 'Rest',
+  dot: 'Dotted',
+  delete: 'Delete',
+  addBar: 'Add bar',
+  removeBar: 'Delete bar',
+  fillRests: 'Fill gaps with rests',
+  clear: 'Clear',
+  clearConfirm: 'Sure?',
+  examples: 'Examples',
+  instrument: 'Instrument',
+  chooseInstrument: 'Choose instrument',
+  addInstrument: 'Add instrument',
+  removeInstrument: 'Delete this staff',
+  mute: 'Mute',
+  unmute: 'Unmute',
+  close: 'Close',
+  chooseTimeSig: 'Time signature',
+  noRoom: (left: string) => (left ? `No room in this bar. Left: ${left}` : 'This bar is full.'),
+  dropped: (n: number) => `${n} note(s) did not fit the new time signature and were removed.`,
+  cantDot: 'A sixteenth note cannot be dotted.',
+  hint: 'Tap a value to add it at the cursor. Tap a note to select it and change it.',
+  ensembleHint: 'Tap a staff to work on it, then add notes. Tap the icon on the left to change its instrument.',
+  settingsTitle: 'Settings',
+  language: 'Language',
+  clickVolume: 'Metronome volume',
+  noteVolume: 'Note volume',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  howTo: 'How to use',
+  howToItems: [
+    'The metronome always ticks while playing; the first beat is louder.',
+    'Use the "Notes" button to silence the notes and play along with just the metronome.',
+    'With "Count-in" on, you hear one bar of metronome before the music starts.',
+    'Unfinished bars end in silence; use "Fill gaps with rests" to write them out.',
+  ],
+  units: { 16: 'sixteenth', 8: 'eighth', 4: 'quarter', 2: 'half', 1: 'whole' },
+};
+
+export const STRINGS: Record<Lang, Strings> = { tr, en };
+
+/** Describes a number of sixteenths in words, e.g. 6 → "dörtlük + sekizlik". */
+export function describeUnits(units: number, s: Strings): string {
+  const parts: string[] = [];
+  let left = units;
+  for (const size of [16, 8, 4, 2, 1]) {
+    if (left >= size) {
+      parts.push(s.units[16 / size]);
+      left -= size;
+    }
+  }
+  return parts.join(' + ');
+}
