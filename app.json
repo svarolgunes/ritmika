@@ -37,8 +37,8 @@
       [
         "expo-audio",
         {
-          "microphonePermission": false,
-          "recordAudioAndroid": false,
+          "microphonePermission": "Ritmika listens to your singing or playing to show which note it is. Nothing is recorded or sent anywhere.",
+          "recordAudioAndroid": true,
           "enableBackgroundPlayback": false
         }
       ],
