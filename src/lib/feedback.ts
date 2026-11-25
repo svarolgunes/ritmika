@@ -8,3 +8,7 @@ export function hapticTap() {
 export function hapticError() {
   if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
 }
+
+export function hapticSuccess() {
+  if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+}

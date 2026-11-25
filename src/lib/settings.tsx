@@ -15,9 +15,13 @@ export type Settings = {
   countIn: boolean;
   /** Editing tools are shown; when off, the screen only has what's needed to play. */
   editing: boolean;
+  /** Tuning reference for the Sing tab: the frequency of A4 (La4) in Hz. */
+  a4: number;
 };
 
-const DEFAULTS: Settings = { lang: 'tr', clickVolume: 0.7, noteVolume: 1, notesAudible: true, loop: true, countIn: true, editing: false };
+export const A4_CHOICES = [432, 440, 442] as const;
+
+const DEFAULTS: Settings = { lang: 'tr', clickVolume: 0.7, noteVolume: 1, notesAudible: true, loop: true, countIn: true, editing: false, a4: 440 };
 
 type SettingsApi = Settings & { t: Strings; set: (patch: Partial<Settings>) => void };
 
@@ -40,6 +44,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           loop: typeof saved.loop === 'boolean' ? saved.loop : s.loop,
           countIn: typeof saved.countIn === 'boolean' ? saved.countIn : s.countIn,
           editing: typeof saved.editing === 'boolean' ? saved.editing : s.editing,
+          a4: (A4_CHOICES as readonly number[]).includes(saved.a4 as number) ? (saved.a4 as number) : s.a4,
         }));
       })
       .catch(() => undefined);

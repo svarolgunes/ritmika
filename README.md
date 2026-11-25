@@ -4,13 +4,14 @@ Ritmika is a mobile app for writing and playing rhythms on percussion instrument
 
 ## What's in the app
 
-Three tabs:
+Four tabs:
 
 | Tab | What it does |
 | --- | --- |
 | **Ritim** (Rhythm) | One instrument on one stave. Pick the instrument, write a rhythm bar by bar, play it. |
 | **Topluluk** (Ensemble) | Several instruments, each on its own stave, with their bars lined up like a score. Add, mute, change or remove instruments. |
-| **Ayarlar** (Settings) | Language (Turkish / English), metronome and note volume, short how-to. |
+| **Ses** (Sing) | A live pitch analyzer: sing or play into the microphone and see the note, how in tune it is, and its line over time. Includes a "match the note" game. |
+| **Ayarlar** (Settings) | Language (Turkish / English), metronome and note volume, tuning (A4), short how-to. |
 
 ### Play mode and edit mode
 
@@ -34,7 +35,17 @@ The ✏️ **Düzenle / Edit** button at the top right switches the editor on an
 - Edits made while playing are picked up at the next loop, so the beat never stops.
 - In the ensemble, a muted staff stays visible but silent.
 
-All 11 instruments (davul, trampet, zil, tef, marakas, üçgen, tahta blok, alkış, çan, darbuka, kastanyet) and the three metronome clicks are short WAV files synthesized by `scripts/sounds/generate.py`. They work offline and sound the same on every device.
+### Singing and pitch (Ses)
+
+- Press 🎤 and sing, hum, whistle or play an instrument. The big note name (Do Re Mi in Turkish, C D E in English, with the octave) and a tuner needle show the note and how many cents it is flat (*pes*) or sharp (*tiz*). The face smiles when it's within 10 cents.
+- The **pitch trail** scrolls the last 6 seconds over coloured note lanes, like a karaoke or singing app. Each note has its own colour (Do red, Re orange, Mi yellow …), and the lanes follow the voice up and down.
+- **Notayı yakala / Match the note:** tap a note from Do4 to Do5 to hear it, then sing or play it back and hold it in tune (±30 cents) for a second to earn a ⭐. Any octave counts, so a grown-up's voice an octave lower works too. *Sıradaki / Next* goes up the scale.
+- The microphone is only on while 🎤 is pressed, and turns off when you leave the tab or the app. Sound is analysed on the device; nothing is recorded, saved or sent.
+- Tuning reference A4 = 432, 440 (default) or 442 Hz in Settings.
+
+How it works: expo-audio's `useAudioStream` delivers live PCM from the microphone on iOS and Android (the Web Audio API with an AudioWorklet does it in the browser). `src/lib/pitch/tracker.ts` low-passes and decimates it to about 16 kHz and runs the **McLeod Pitch Method** (`src/lib/pitch/mpm.ts`, FFT-based NSDF with parabolic peak refinement) on a 64 ms window about 25 times a second, between 60 and 1500 Hz. A loudness and clarity gate hides silence and noise, an onset check and octave-jump hold remove the classic detector glitches, and light smoothing keeps the line calm without lagging a melody. It is pure TypeScript with no native code beyond expo-audio, so it runs in Expo Go.
+
+All 11 instruments (davul, trampet, zil, tef, marakas, üçgen, tahta blok, alkış, çan, darbuka, kastanyet) the three metronome clicks and the eight reference tones for *Match the note* are short WAV files synthesized by `scripts/sounds/generate.py`. They work offline and sound the same on every device.
 
 Both tabs save their piece on the device and come with example rhythms (✨). The examples include a rock beat, a *Karşılama* in 9/8, a carnival groove and a waltz band.
 
@@ -43,12 +54,12 @@ Both tabs save their piece on the device and come with example rhythms (✨). Th
 ```bash
 npm install
 npx expo start        # scan the QR code with Expo Go, or press i / a / w
-npm test              # rhythm, editing, timeline, layout and preset tests
+npm test              # rhythm, editing, timeline, layout, preset and pitch tests
 npm run typecheck
 npm run lint
 ```
 
-All native modules (`expo-audio`, `expo-haptics`, `react-native-svg`, AsyncStorage) are in Expo Go, so no development build is needed.
+All native modules (`expo-audio`, `expo-haptics`, `react-native-svg`, AsyncStorage) are in Expo Go, so no development build is needed. The Sing tab asks for microphone access the first time 🎤 is pressed; in the browser it needs `localhost` or HTTPS.
 
 ### Project layout
 
@@ -56,6 +67,7 @@ All native modules (`expo-audio`, `expo-haptics`, `react-native-svg`, AsyncStora
 src/app/                 screens (Expo Router)
   (tabs)/index.tsx       Ritim – one instrument
   (tabs)/ensemble.tsx    Topluluk – several staves
+  (tabs)/sing.tsx        Ses – live pitch analyzer and "match the note"
   (tabs)/settings.tsx    Ayarlar
 src/components/
   Score.tsx              the stave(s): layout, notes, beams, cursor, tap targets
@@ -63,12 +75,21 @@ src/components/
   Palette.tsx            note values, note/rest, dot, delete
   Transport.tsx          play, tempo, time signature, toggles, beat dots
   EditorScreen.tsx       the editor screen both tabs share
+  PitchTrail.tsx         the scrolling pitch line over note lanes
+  TunerMeter.tsx         the flat/sharp needle
 src/lib/
   rhythm.ts              durations, time signatures, beaming, rest splitting
   song.ts                songs and every editing operation (pure functions)
   timeline.ts            song → time-ordered clicks and hits
   engine.ts              audio players and the playback scheduler
   layout.ts              where bars and notes go on screen
+  usePitch.ts            microphone on/off, pitch frames and the trail
+  pitch/mpm.ts           McLeod Pitch Method detector (FFT)
+  pitch/tracker.ts       stream → steady pitch line (decimation, gates, octave fix, smoothing)
+  pitch/notes.ts         Hz ↔ note numbers, cents, note names and colours
+  pitch/match.ts         the "match the note" game
+  pitch/tones.ts         reference tones
+  pitch/useMicStream*.ts live mic samples (native / web)
 src/data/
   instruments.ts         the instruments
   presets.ts             example rhythms in a small text notation

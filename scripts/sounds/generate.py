@@ -1,4 +1,4 @@
-"""Synthesizes every instrument and metronome sample in assets/sounds.
+"""Synthesizes every instrument, metronome and reference-tone sample in assets/sounds.
 
 Run with `npm run sounds` (needs numpy). The samples are short, mono, 44.1 kHz
 16-bit WAV files, so they load fast and need no network. Tweak a recipe here
@@ -68,18 +68,18 @@ def mix(*parts):
     return out
 
 
-def save(name, x, peak=0.9):
+def save(name, x, peak=0.9, rate=SR):
     x = x / (np.max(np.abs(x)) + 1e-9) * peak
-    fade = min(len(x), int(SR * 0.004))
+    fade = min(len(x), int(rate * 0.004))
     x[-fade:] *= np.linspace(1, 0, fade)
     data = (x * 32767).astype('<i2')
     path = os.path.join(OUT, f'{name}.wav')
     with wave.open(path, 'wb') as w:
         w.setnchannels(1)
         w.setsampwidth(2)
-        w.setframerate(SR)
+        w.setframerate(rate)
         w.writeframes(data.tobytes())
-    print(f'{name}.wav  {len(x) / SR:.2f}s')
+    print(f'{name}.wav  {len(x) / rate:.2f}s')
 
 
 def drum():
@@ -186,7 +186,28 @@ SOUNDS = {
     'click': lambda: click(990, decay=0.01),
 }
 
+# Reference tones for the Sing tab's "match the note" game: a soft,
+# flute-like voice (mostly fundamental, so it is easy to sing along to) on
+# the white keys from middle C (Do4) to C5, tuned to A4 = 440 Hz.
+TONE_RATE = 22050
+TONE_NOTES = [60, 62, 64, 65, 67, 69, 71, 72]
+
+
+def reference_tone(midi, seconds=1.3):
+    f0 = 440.0 * 2 ** ((midi - 69) / 12)
+    x = np.arange(int(TONE_RATE * seconds)) / TONE_RATE
+    # A gentle vibrato that fades in, as a singer's would.
+    vib = 1 + 0.004 * np.sin(2 * np.pi * 5 * x) * np.minimum(1, np.maximum(0, (x - 0.35) / 0.4))
+    phase = 2 * np.pi * f0 * np.cumsum(vib) / TONE_RATE
+    voice = np.sin(phase) + 0.35 * np.sin(2 * phase) + 0.12 * np.sin(3 * phase) + 0.04 * np.sin(4 * phase)
+    attack = np.minimum(1, x / 0.04)
+    release = np.minimum(1, np.maximum(0, (seconds - x) / 0.25))
+    return voice * attack * release * (1 - 0.15 * x / seconds)
+
+
 if __name__ == '__main__':
     os.makedirs(OUT, exist_ok=True)
     for name, make in SOUNDS.items():
         save(name, make())
+    for midi in TONE_NOTES:
+        save(f'tone-{midi}', reference_tone(midi), peak=0.8, rate=TONE_RATE)

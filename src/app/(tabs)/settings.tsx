@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../components/theme';
 import { Card, Chip, Header } from '../../components/ui';
 import { playSound } from '../../lib/engine';
-import { useSettings } from '../../lib/settings';
+import { A4_CHOICES, useSettings } from '../../lib/settings';
 
 const LEVELS = [
   { key: 'low', value: 0.35 },
@@ -58,6 +58,15 @@ export default function SettingsScreen() {
                   playSound('woodblock', l.value);
                 }}
               />
+            ))}
+          </View>
+        </Card>
+
+        <Card style={styles.card}>
+          <Text style={styles.cardTitle}>{t.tuning}</Text>
+          <View style={styles.row}>
+            {A4_CHOICES.map((hz) => (
+              <Chip key={hz} label={`${hz} Hz`} active={settings.a4 === hz} onPress={() => settings.set({ a4: hz })} />
             ))}
           </View>
         </Card>
