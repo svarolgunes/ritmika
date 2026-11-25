@@ -3,13 +3,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { PitchTracker, type PitchFrame } from './pitch/tracker';
+import type { Voice } from './pitch/voices';
 import { useMicStream } from './pitch/useMicStream';
 import { useSettings } from './settings';
 
 export type MicStatus = 'idle' | 'starting' | 'listening' | 'denied' | 'error';
 
 /** A point on the pitch trail; midi is null where nothing was heard. */
-export type TrailPoint = { t: number; midi: number | null };
+export type TrailPoint = {
+  t: number;
+  midi: number | null;
+  /** With several-note mode on: every line heard at this moment. */
+  voices?: Voice[];
+};
 
 /** How much of the past the trail keeps, in seconds. */
 export const TRAIL_SECONDS = 6;
@@ -26,7 +32,7 @@ const EMPTY: Reading = { frame: null, trail: [] };
  * one, which is what a game that counts how long a note is held needs.
  */
 export function usePitch(onFrame?: (frame: PitchFrame, dt: number) => void) {
-  const { a4 } = useSettings();
+  const { a4, polyphonic } = useSettings();
   const [tracker] = useState(() => new PitchTracker({ a4 }));
   const [reading, setReading] = useState<Reading>(EMPTY);
   const [status, setStatus] = useState<MicStatus>('idle');
@@ -43,6 +49,10 @@ export function usePitch(onFrame?: (frame: PitchFrame, dt: number) => void) {
     tracker.setA4(a4);
   }, [tracker, a4]);
 
+  useEffect(() => {
+    tracker.setPoly(polyphonic);
+  }, [tracker, polyphonic]);
+
   const handle = useCallback(
     (samples: Float32Array, rate: number) => {
       const frames = tracker.push(samples, rate);
@@ -51,11 +61,11 @@ export function usePitch(onFrame?: (frame: PitchFrame, dt: number) => void) {
       const points: TrailPoint[] = [];
       let last = frames[0];
       for (let f of frames) {
-        if (muted) f = { ...f, hz: null, midi: null };
+        if (muted) f = { ...f, hz: null, midi: null, voices: [] };
         last = f;
         const dt = lastT.current ? Math.min(0.2, f.t - lastT.current) : 0;
         lastT.current = f.t;
-        points.push({ t: f.t, midi: f.midi });
+        points.push({ t: f.t, midi: f.midi, voices: muted ? undefined : f.voices });
         frameHandler.current?.(f, dt);
       }
       const cutoff = last.t - TRAIL_SECONDS;

@@ -39,13 +39,15 @@ The ✏️ **Düzenle / Edit** button at the top right switches the editor on an
 
 - Press 🎤 and sing, hum, whistle or play an instrument. The big note name (Do Re Mi in Turkish, C D E in English, with the octave) and a tuner needle show the note and how many cents it is flat (*pes*) or sharp (*tiz*). The face smiles when it's within 10 cents.
 - The **pitch trail** scrolls the last 6 seconds over coloured note lanes, like a karaoke or singing app. Each note has its own colour (Do red, Re orange, Mi yellow …). With 🎯 *Sesi takip et / Follow my voice* on (the default) the lanes follow the voice up and down; turn it off and they stay put, and you drag the trail up and down to move smoothly through notes and octaves (Do1 to Do7). The app remembers the choice.
+- A line is cut where the pitch leaps (more than a semitone at once) and a new one starts, so a jump never draws a stroke across the notes in between; glides and vibrato stay one line.
+- 🎹 **Çoklu nota / Several notes** (off by default) finds several notes at once, such as a piano chord or two voices, and draws each as its own line. The strongest (dominant) note is drawn in full colour and shown big in the readout; the others are see-through, and listed under it (e.g. *Sol3 · Si3 · Re4*).
 - **Notayı yakala / Match the note:** pick an octave (2, 3 or 4) and tap a note from its Do to the next Do to hear it, then sing or play exactly that note and hold it in tune (±30 cents) for a second to earn a ⭐. Only the chosen octave counts: if the right note is sung an octave off, the app says to go an octave up or down. *Sıradaki / Next* goes up the scale. The app remembers the octave.
 - The microphone is only on while 🎤 is pressed, and turns off when you leave the tab or the app. Sound is analysed on the device; nothing is recorded, saved or sent.
 - Tuning reference A4 = 432, 440 (default) or 442 Hz in Settings.
 
-How it works: expo-audio's `useAudioStream` delivers live PCM from the microphone on iOS and Android (the Web Audio API with an AudioWorklet does it in the browser). `src/lib/pitch/tracker.ts` low-passes and decimates it to about 16 kHz and runs the **McLeod Pitch Method** (`src/lib/pitch/mpm.ts`, FFT-based NSDF with parabolic peak refinement) on a 64 ms window about 40 times a second, between 60 and 1500 Hz. A loudness and clarity gate with hysteresis hides silence and noise but follows a held note through quieter, breathier moments; dropouts under 150 ms are bridged; an onset check and octave-jump hold remove the classic detector glitches; and a 3-frame median plus adaptive smoothing (strong for wobbles, weak for real moves and glides) keeps the line calm without lagging a melody. The trail is drawn as a smooth connected curve. It is pure TypeScript with no native code beyond expo-audio, so it runs in Expo Go.
+How it works: expo-audio's `useAudioStream` delivers live PCM from the microphone on iOS and Android (the Web Audio API with an AudioWorklet does it in the browser). `src/lib/pitch/tracker.ts` low-passes and decimates it to about 16 kHz and runs the **McLeod Pitch Method** (`src/lib/pitch/mpm.ts`, FFT-based NSDF with parabolic peak refinement) on a 64 ms window about 40 times a second, between 60 and 1500 Hz. A loudness and clarity gate with hysteresis hides silence and noise but follows a held note through quieter, breathier moments; dropouts under 150 ms are bridged; an onset check and octave-jump hold remove the classic detector glitches; and a 3-frame median plus adaptive smoothing (strong for wobbles, weak for real moves and glides) keeps the line calm without lagging a melody. The trail is drawn as a smooth curve. With several-note mode on, `src/lib/pitch/poly.ts` also analyses a 128 ms window 20 times a second with Klapuri's **iterative harmonic-sum estimation and cancellation** (whitened spectrum, harmonic salience, removing each found note's partials before looking for the next, with checks against octave and twelfth mistakes and a noise-contrast gate), and `src/lib/pitch/voices.ts` joins the notes frame to frame into lines, ending a line at any jump bigger than 0.8 semitone. Notes exactly an octave apart come out as one. It is pure TypeScript with no native code beyond expo-audio, so it runs in Expo Go.
 
-All 11 instruments (davul, trampet, zil, tef, marakas, üçgen, tahta blok, alkış, çan, darbuka, kastanyet) the three metronome clicks and the 22 reference tones for *Match the note* (Do2 to Do5) are short WAV files synthesized by `scripts/sounds/generate.py`. They work offline and sound the same on every device.
+All 11 instruments (davul, trampet, zil, tef, marakas, üçgen, tahta blok, alkış, çan, darbuka, kastanyet) the three metronome clicks and the 22 piano reference tones for *Match the note* (Do2 to Do5) are short WAV files synthesized by `scripts/sounds/generate.py`. They work offline and sound the same on every device.
 
 Both tabs save their piece on the device and come with example rhythms (✨). The examples include a rock beat, a *Karşılama* in 9/8, a carnival groove and a waltz band.
 
@@ -87,8 +89,10 @@ src/lib/
   pitch/mpm.ts           McLeod Pitch Method detector (FFT)
   pitch/tracker.ts       stream → steady pitch line (decimation, gates, gap bridging, octave fix, smoothing)
   pitch/notes.ts         Hz ↔ note numbers, cents, note names and colours
+  pitch/poly.ts          several notes at once (harmonic-sum estimation and cancellation)
+  pitch/voices.ts        several notes over time → separate lines, dominant one marked
   pitch/match.ts         the "match the note" game
-  pitch/tones.ts         reference tones
+  pitch/tones.ts         piano reference tones
   pitch/useMicStream*.ts live mic samples (native / web)
 src/data/
   instruments.ts         the instruments

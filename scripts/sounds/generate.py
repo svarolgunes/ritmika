@@ -186,29 +186,38 @@ SOUNDS = {
     'click': lambda: click(990, decay=0.01),
 }
 
-# Reference tones for the Sing tab's "match the note" game: a soft,
-# flute-like voice (mostly fundamental, so it is easy to sing along to) on
-# the white keys from Do2 to Do5, tuned to A4 = 440 Hz.
+# Reference tones for the Sing tab's "match the note" game: a synthesized
+# piano on the white keys from Do2 to Do5, tuned to A4 = 440 Hz.
 TONE_RATE = 22050
 TONE_NOTES = sorted({12 * (octave + 1) + k for octave in (2, 3, 4) for k in (0, 2, 4, 5, 7, 9, 11, 12)})
 
 
-def reference_tone(midi, seconds=1.3):
+def reference_tone(midi, seconds=1.5):
+    """A piano note: struck, slightly stretched partials that each die away.
+
+    Each partial n sits at n·f0·sqrt(1 + B·n²) (string stiffness), with two
+    strings a hair apart for the slow beating of a real piano, a decay that
+    is faster for higher partials and higher notes, a soft hammer thump at
+    the start, and a short damper release at the end. Low notes keep strong
+    overtones so a phone speaker still makes their pitch clear.
+    """
     f0 = 440.0 * 2 ** ((midi - 69) / 12)
     x = np.arange(int(TONE_RATE * seconds)) / TONE_RATE
-    # A gentle vibrato that fades in, as a singer's would.
-    vib = 1 + 0.004 * np.sin(2 * np.pi * 5 * x) * np.minimum(1, np.maximum(0, (x - 0.35) / 0.4))
-    phase = 2 * np.pi * f0 * np.cumsum(vib) / TONE_RATE
-    if midi >= 55:
-        voice = np.sin(phase) + 0.35 * np.sin(2 * phase) + 0.12 * np.sin(3 * phase) + 0.04 * np.sin(4 * phase)
-    else:
-        # Low notes get stronger overtones, like a cello, so a phone speaker
-        # that can't reproduce 65 Hz still makes the pitch clear.
-        partials = [1, 0.9, 0.7, 0.5, 0.35, 0.22, 0.12]
-        voice = sum(a * np.sin((k + 1) * phase) for k, a in enumerate(partials))
-    attack = np.minimum(1, x / 0.04)
-    release = np.minimum(1, np.maximum(0, (seconds - x) / 0.25))
-    return voice * attack * release * (1 - 0.15 * x / seconds)
+    inharm = 0.0004 * 2 ** ((midi - 60) / 24)
+    base_decay = 2.2 * 2 ** (-(midi - 48) / 24)  # seconds; low notes ring longer
+    tone = np.zeros_like(x)
+    for n in range(1, 13):
+        fn = n * f0 * np.sqrt(1 + inharm * n * n)
+        if fn > TONE_RATE / 2 - 500:
+            break
+        amp = (1.0 / n ** 0.9) * (1.6 if (midi < 55 and n in (2, 3)) else 1.0)
+        decay = base_decay / (1 + 0.45 * (n - 1))
+        detune = 1 + 0.0007 * (1 if n % 2 else -1)
+        tone += amp * np.exp(-x / decay) * (np.sin(2 * np.pi * fn * x) + 0.6 * np.sin(2 * np.pi * fn * detune * x + 0.3))
+    thump = rng.uniform(-1, 1, len(x)) * np.exp(-x / 0.008) * 0.15
+    attack = np.minimum(1, x / 0.003)
+    release = np.minimum(1, np.maximum(0, (seconds - x) / 0.12))
+    return (tone + lowpass(thump, 2000)) * attack * release
 
 
 if __name__ == '__main__':

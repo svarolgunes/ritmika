@@ -21,6 +21,8 @@
  */
 import { PitchDetector, rms } from './mpm';
 import { hzToMidi } from './notes';
+import { PolyDetector } from './poly';
+import { VoiceTracker, type Voice } from './voices';
 
 export type PitchFrame = {
   /** Seconds since the tracker started (stream time, not wall clock). */
@@ -32,6 +34,8 @@ export type PitchFrame = {
   clarity: number;
   /** Loudness of the frame in dBFS (0 is full scale). */
   db: number;
+  /** With poly on: every note heard, each as its own continuing line, strongest first. */
+  voices?: Voice[];
 };
 
 export type TrackerOptions = {
@@ -51,10 +55,14 @@ export type TrackerOptions = {
   hop?: number;
   /** Reference pitch for A4, for the midi field. */
   a4?: number;
+  /** Also find several notes at once (frame.voices). */
+  poly?: boolean;
 };
 
 const TARGET_RATE = 16000;
 const WINDOW_SECONDS = 0.064;
+/** Several notes need finer frequency detail, so a longer window. */
+const POLY_WINDOW_SECONDS = 0.128;
 const ONSET_FRAMES = 2;
 /** Frames an octave jump must last before it's believed. */
 const OCTAVE_HOLD = 3;
@@ -71,6 +79,11 @@ export class PitchTracker {
   private detector: PitchDetector | null = null;
   /** Ring buffer of the latest samples, and the window copied out of it in order. */
   private ring = new Float32Array(0);
+  private polyWindow = new Float32Array(0);
+  private poly: PolyDetector | null = null;
+  private readonly voices: VoiceTracker;
+  private polyTick = false;
+  private lastVoices: Voice[] | null = null;
   private pos = 0;
   private window = new Float32Array(0);
   private filled = 0;
@@ -104,7 +117,9 @@ export class PitchTracker {
       maxGap: options.maxGap ?? 0.15,
       hop: options.hop ?? 0.025,
       a4: options.a4 ?? 440,
+      poly: options.poly ?? false,
     };
+    this.voices = new VoiceTracker(this.opts.hop * 2);
   }
 
   /** Changes the A4 reference; the line already shown keeps its pitch. */
@@ -112,14 +127,25 @@ export class PitchTracker {
     if (value === this.opts.a4) return;
     const shift = hzToMidi(this.opts.a4, value) - 69; // same sound, new numbering
     this.opts.a4 = value;
+    this.voices.shift(shift);
     if (this.current !== null) this.current += shift;
     if (this.candidate) this.candidate.midi += shift;
     if (this.octaveSuspect) this.octaveSuspect.midi += shift;
     this.recent = this.recent.map((m) => m + shift);
   }
 
+  /** Turns finding several notes at once on or off. */
+  setPoly(on: boolean) {
+    if (on === this.opts.poly) return;
+    this.opts.poly = on;
+    this.voices.reset();
+    this.lastVoices = null;
+  }
+
   /** Forgets the line, e.g. after the mic was off for a while. */
   reset() {
+    this.voices.reset();
+    this.lastVoices = null;
     this.candidate = null;
     this.current = null;
     this.octaveSuspect = null;
@@ -134,9 +160,13 @@ export class PitchTracker {
     this.factor = Math.max(1, Math.round(sampleRate / TARGET_RATE));
     this.rate = sampleRate / this.factor;
     const size = Math.round(this.rate * WINDOW_SECONDS);
+    let polySize = 1;
+    while (polySize < this.rate * POLY_WINDOW_SECONDS) polySize <<= 1;
     this.detector = new PitchDetector({ sampleRate: this.rate, size, minHz: this.opts.minHz, maxHz: this.opts.maxHz });
+    this.poly = new PolyDetector({ sampleRate: this.rate, size: polySize, minHz: this.opts.minHz, maxHz: this.opts.maxHz });
     this.window = new Float32Array(size);
-    this.ring = new Float32Array(size);
+    this.polyWindow = new Float32Array(polySize);
+    this.ring = new Float32Array(polySize);
     this.pos = 0;
     this.hopSize = Math.max(1, Math.round(this.rate * this.opts.hop));
     // Cut-off a little under the new Nyquist frequency.
@@ -171,7 +201,7 @@ export class PitchTracker {
       this.pos = (this.pos + 1) % size;
       if (this.filled < size) this.filled += 1;
       this.sinceHop += 1;
-      if (this.filled === size && this.sinceHop >= this.hopSize) {
+      if (this.filled >= this.window.length && this.sinceHop >= this.hopSize) {
         this.sinceHop = 0;
         out.push(this.analyse());
       }
@@ -181,9 +211,12 @@ export class PitchTracker {
 
   private analyse(): PitchFrame {
     const t = this.samplesOut / this.rate;
-    const { ring, window, pos } = this;
-    window.set(ring.subarray(pos), 0);
-    window.set(ring.subarray(0, pos), ring.length - pos);
+    const { ring, window, polyWindow, pos } = this;
+    const n = ring.length;
+    // The ring in time order is ring[pos …] then ring[… pos); the short window is its tail.
+    polyWindow.set(ring.subarray(pos), 0);
+    polyWindow.set(ring.subarray(0, pos), n - pos);
+    window.set(polyWindow.subarray(n - window.length));
     const level = rms(this.window);
     const db = level > 0 ? 20 * Math.log10(level) : -120;
     const going = this.current !== null;
@@ -196,7 +229,21 @@ export class PitchTracker {
         ? hzToMidi(estimate.hz, this.opts.a4)
         : null;
     const midi = this.follow(heard);
-    return { t, hz: midi === null ? null : this.opts.a4 * 2 ** ((midi - 69) / 12), midi, clarity, db };
+    const frame: PitchFrame = { t, hz: midi === null ? null : this.opts.a4 * 2 ** ((midi - 69) / 12), midi, clarity, db };
+    if (this.opts.poly) {
+      // Several-note analysis costs more, so it runs on every other frame;
+      // the frames between repeat its lines.
+      this.polyTick = !this.polyTick;
+      if (this.polyTick || !this.lastVoices) {
+        const notes =
+          this.filled === n && db >= this.opts.sustainDb
+            ? this.poly!.detect(polyWindow).map((p) => ({ midi: hzToMidi(p.hz, this.opts.a4), salience: p.salience }))
+            : [];
+        this.lastVoices = this.voices.step(notes);
+      }
+      frame.voices = this.lastVoices;
+    }
+    return frame;
   }
 
   /** Steps 2–5 above. */

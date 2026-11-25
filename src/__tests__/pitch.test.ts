@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 
 import { PitchDetector } from '../lib/pitch/mpm';
+import { PolyDetector } from '../lib/pitch/poly';
 import { centsFromPitchClass, hzToMidi, midiToHz, nearestNote, noteName, octaveOf, pitchClass } from '../lib/pitch/notes';
 import { matchHint, MATCH_OCTAVES, NEW_MATCH, scaleNotes, stepMatch, TONE_NOTES } from '../lib/pitch/match';
 import { PitchTracker, type PitchFrame } from '../lib/pitch/tracker';
@@ -292,5 +293,89 @@ describe('reference tones', () => {
     const frames: PitchFrame[] = [];
     for (let i = 0; i < x.length; i += 1024) frames.push(...tracker.push(x.subarray(i, i + 1024), rate));
     expect(Math.abs(cents(steadyHz(frames), midiToHz(note)))).toBeLessThan(8);
+  });
+});
+
+describe('several notes at once', () => {
+  /** A piano-like note: slightly stretched partials, the higher ones weaker. */
+  const pianoPartials = (n: number): Partial[] =>
+    Array.from({ length: n }, (_, i) => ({ mult: (i + 1) * Math.sqrt(1 + 0.0004 * (i + 1) ** 2), amp: 1 / (i + 1) ** 0.9 }));
+  const chord = (midis: number[], seconds: number, level = 0.12) => {
+    const out = new Float32Array(Math.round(SR * seconds));
+    midis.forEach((m) => {
+      const t = tone(midiToHz(m), seconds, pianoPartials(10), level);
+      for (let i = 0; i < out.length; i += 1) out[i] += t[i];
+    });
+    return out;
+  };
+  const polyTrack = (signal: Float32Array) => track(signal, new PitchTracker({ poly: true }));
+  const notesAt = (f: PitchFrame) => (f.voices ?? []).map((v) => Math.round(v.midi)).sort((a, b) => a - b);
+
+  it.each([[60], [36], [60, 64, 67], [48, 64], [57, 60, 64], [60, 64, 67, 71], [62, 65], [43, 71], [48, 55, 64], [72, 76, 79]])(
+    'detector reads the chord %p exactly',
+    (...midis: number[]) => {
+      const d = new PolyDetector({ sampleRate: 16000, size: 2048, minHz: 60, maxHz: 1500 });
+      const x = new Float32Array(2048);
+      midis.forEach((m, j) => {
+        for (const p of pianoPartials(12)) {
+          const f = midiToHz(m) * p.mult;
+          if (f > 7500) break;
+          for (let i = 0; i < x.length; i += 1) x[i] += p.amp * Math.sin((2 * Math.PI * f * i) / 16000 + p.mult + j);
+        }
+      });
+      const found = d.detect(x).map((n) => hzToMidi(n.hz));
+      expect(found.map(Math.round).sort((a, b) => a - b)).toEqual([...midis].sort((a, b) => a - b));
+      for (const f of found) expect(Math.abs(f - Math.round(f))).toBeLessThan(0.05);
+    },
+  );
+
+  it('finds each note of a held chord as its own steady line', () => {
+    const frames = polyTrack(chord([60, 64, 67], 0.8)).filter((f) => f.t > 0.25);
+    expect(frames.length).toBeGreaterThan(15);
+    const exact = frames.filter((f) => notesAt(f).join() === '60,64,67');
+    expect(exact.length / frames.length).toBeGreaterThan(0.9);
+    // The same three lines all the way through, never re-started.
+    const ids = new Set(frames.flatMap((f) => (f.voices ?? []).map((v) => v.id)));
+    expect(ids.size).toBe(3);
+    for (const f of exact) for (const v of f.voices!) expect(Math.abs(v.midi - Math.round(v.midi))).toBeLessThan(0.08);
+  });
+
+  it('marks exactly one line as dominant, the loudest', () => {
+    const loud = tone(midiToHz(67), 0.6, pianoPartials(10), 0.25);
+    const soft = tone(midiToHz(55), 0.6, pianoPartials(10), 0.06);
+    const frames = polyTrack(loud.map((v, i) => v + soft[i])).filter((f) => f.t > 0.25 && (f.voices?.length ?? 0) === 2);
+    expect(frames.length).toBeGreaterThan(8);
+    for (const f of frames) {
+      expect(f.voices!.filter((v) => v.dominant)).toHaveLength(1);
+      expect(Math.round(f.voices!.find((v) => v.dominant)!.midi)).toBe(67);
+      expect(f.voices!.find((v) => !v.dominant)!.strength).toBeLessThan(1);
+    }
+  });
+
+  it('ends a line at a big leap and starts a new one, instead of jumping', () => {
+    const signal = new Float32Array(Math.round(SR * 1.2));
+    signal.set(chord([60], 0.6));
+    signal.set(chord([67], 0.6), Math.round(SR * 0.6));
+    const frames = polyTrack(signal);
+    const lines = new Map<number, number[]>();
+    for (const f of frames) for (const v of f.voices ?? []) lines.set(v.id, [...(lines.get(v.id) ?? []), v.midi]);
+    expect(lines.size).toBeGreaterThanOrEqual(2);
+    // No line ever moves more than a fraction of a semitone between frames.
+    for (const midis of lines.values()) for (let i = 1; i < midis.length; i += 1) expect(Math.abs(midis[i] - midis[i - 1])).toBeLessThan(0.8);
+  });
+
+  it('finds one line for a single sung note, and none for noise', () => {
+    const sung = polyTrack(tone(220, 0.6, VOICE, 0.3)).filter((f) => f.t > 0.25);
+    expect(sung.filter((f) => notesAt(f).join() === '57').length / sung.length).toBeGreaterThan(0.9);
+    const noise = polyTrack(tone(440, 0.6, [], 0, 0.3));
+    expect(noise.filter((f) => (f.voices?.length ?? 0) > 0).length).toBeLessThanOrEqual(1);
+  });
+
+  it('stays light enough for a phone', () => {
+    const x = chord([48, 60, 64, 67], 4);
+    const start = Date.now();
+    polyTrack(x);
+    // 4 s of audio; on a laptop this is well under a tenth of real time.
+    expect(Date.now() - start).toBeLessThan(300);
   });
 });

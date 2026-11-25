@@ -11,7 +11,7 @@ import { Platform } from 'react-native';
 export { TONE_NOTES } from './match';
 
 /** How long a tone sounds, so the mic can ignore it meanwhile. */
-export const TONE_MS = 1300;
+export const TONE_MS = 1500;
 
 // require() needs literal paths, so every tone is listed.
 const FILES: Record<number, number> = {

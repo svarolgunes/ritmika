@@ -37,7 +37,7 @@ export type DetectorOptions = {
 };
 
 /** In-place iterative radix-2 FFT on separate real and imaginary arrays. */
-class FFT {
+export class FFT {
   readonly n: number;
   private readonly rev: Uint32Array;
   private readonly cos: Float64Array;
