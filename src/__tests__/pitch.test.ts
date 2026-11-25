@@ -2,7 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 
 import { PitchDetector } from '../lib/pitch/mpm';
 import { centsFromPitchClass, hzToMidi, midiToHz, nearestNote, noteName, octaveOf, pitchClass } from '../lib/pitch/notes';
-import { matchHint, NEW_MATCH, stepMatch, TONE_NOTES } from '../lib/pitch/match';
+import { matchHint, MATCH_OCTAVES, NEW_MATCH, scaleNotes, stepMatch, TONE_NOTES } from '../lib/pitch/match';
 import { PitchTracker, type PitchFrame } from '../lib/pitch/tracker';
 
 const SR = 48000;
@@ -207,12 +207,14 @@ describe('pitch tracker', () => {
 });
 
 describe('match the note', () => {
-  it('fills up while the note is held in tune, in any octave', () => {
+  it('fills up only while the exact note, in the chosen octave, is held in tune', () => {
     let s = NEW_MATCH;
-    for (let i = 0; i < 10; i += 1) s = stepMatch(s, 48.1, 60, 0.04); // Do3 for Do4
+    for (let i = 0; i < 30; i += 1) s = stepMatch(s, 48.1, 60, 0.04); // Do3 is not Do4
+    expect(s.held).toBe(0);
+    for (let i = 0; i < 10; i += 1) s = stepMatch(s, 60.1, 60, 0.04);
     expect(s.held).toBeCloseTo(0.4, 6);
     expect(s.done).toBe(false);
-    for (let i = 0; i < 15; i += 1) s = stepMatch(s, 60.2, 60, 0.04);
+    for (let i = 0; i < 15; i += 1) s = stepMatch(s, 59.8, 60, 0.04);
     expect(s.done).toBe(true);
   });
 
@@ -223,10 +225,23 @@ describe('match the note', () => {
     expect(stepMatch(s, null, 60, 1)).toBe(s);
   });
 
-  it('says which way to go', () => {
+  it('says which way to go, including a whole octave', () => {
     expect(matchHint(59.5, 60)).toBe('higher');
     expect(matchHint(60.5, 60)).toBe('lower');
-    expect(matchHint(72.1, 60)).toBe('inTune');
+    expect(matchHint(60.2, 60)).toBe('inTune');
+    expect(matchHint(72.1, 60)).toBe('octaveDown');
+    expect(matchHint(47.9, 60)).toBe('octaveUp');
+    expect(matchHint(35.9, 60)).toBe('octaveUp');
+    expect(matchHint(53, 60)).toBe('higher');
+  });
+
+  it('offers Do to Do in octaves 2, 3 and 4', () => {
+    expect(scaleNotes(2)).toEqual([36, 38, 40, 41, 43, 45, 47, 48]);
+    expect(scaleNotes(4)).toEqual([60, 62, 64, 65, 67, 69, 71, 72]);
+    expect(MATCH_OCTAVES).toEqual([2, 3, 4]);
+    expect(TONE_NOTES).toHaveLength(22);
+    expect(noteName(scaleNotes(3)[4], 'tr')).toBe('Sol');
+    expect(octaveOf(scaleNotes(3)[4])).toBe(3);
   });
 });
 

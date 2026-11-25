@@ -188,9 +188,9 @@ SOUNDS = {
 
 # Reference tones for the Sing tab's "match the note" game: a soft,
 # flute-like voice (mostly fundamental, so it is easy to sing along to) on
-# the white keys from middle C (Do4) to C5, tuned to A4 = 440 Hz.
+# the white keys from Do2 to Do5, tuned to A4 = 440 Hz.
 TONE_RATE = 22050
-TONE_NOTES = [60, 62, 64, 65, 67, 69, 71, 72]
+TONE_NOTES = sorted({12 * (octave + 1) + k for octave in (2, 3, 4) for k in (0, 2, 4, 5, 7, 9, 11, 12)})
 
 
 def reference_tone(midi, seconds=1.3):
@@ -199,7 +199,13 @@ def reference_tone(midi, seconds=1.3):
     # A gentle vibrato that fades in, as a singer's would.
     vib = 1 + 0.004 * np.sin(2 * np.pi * 5 * x) * np.minimum(1, np.maximum(0, (x - 0.35) / 0.4))
     phase = 2 * np.pi * f0 * np.cumsum(vib) / TONE_RATE
-    voice = np.sin(phase) + 0.35 * np.sin(2 * phase) + 0.12 * np.sin(3 * phase) + 0.04 * np.sin(4 * phase)
+    if midi >= 55:
+        voice = np.sin(phase) + 0.35 * np.sin(2 * phase) + 0.12 * np.sin(3 * phase) + 0.04 * np.sin(4 * phase)
+    else:
+        # Low notes get stronger overtones, like a cello, so a phone speaker
+        # that can't reproduce 65 Hz still makes the pitch clear.
+        partials = [1, 0.9, 0.7, 0.5, 0.35, 0.22, 0.12]
+        voice = sum(a * np.sin((k + 1) * phase) for k, a in enumerate(partials))
     attack = np.minimum(1, x / 0.04)
     release = np.minimum(1, np.maximum(0, (seconds - x) / 0.25))
     return voice * attack * release * (1 - 0.15 * x / seconds)

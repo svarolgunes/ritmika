@@ -13,9 +13,10 @@ const NOW_PAD = 22;
 const LABEL_FONT = Platform.OS === 'web' ? 'system-ui, -apple-system, sans-serif' : undefined;
 
 /**
- * Where the lanes are centred: on the target in the matching game, else on
- * the middle of what was sung lately, moved just enough to keep the newest
- * point in view. It depends only on the trail, so the lanes move smoothly as
+ * Where the lanes are centred. In the matching game the target lane is
+ * always in view, with the newest point too when both fit (e.g. an octave
+ * apart). Otherwise it is the middle of what was sung lately, moved just
+ * enough to keep the newest point in view. It depends only on the trail, so the lanes move smoothly as
  * old points scroll away.
  */
 function viewCenter(trail: TrailPoint[], target: number | null): number {
@@ -27,8 +28,12 @@ function viewCenter(trail: TrailPoint[], target: number | null): number {
   }
   const newest = heard[heard.length - 1];
   const reach = SPAN / 2 - 1.5;
-  if (newest !== undefined) center = Math.max(newest - reach, Math.min(newest + reach, center));
-  return center;
+  if (newest === undefined) return center;
+  if (target !== null) {
+    // Both in view if they fit, else the target wins and the hint says which way.
+    return Math.abs(newest - target) <= 2 * reach ? (newest + target) / 2 : target;
+  }
+  return Math.max(newest - reach, Math.min(newest + reach, center));
 }
 
 /**
@@ -91,7 +96,7 @@ export function PitchTrail({
       <Svg width={width} height={height}>
         {lanes.map((m) => {
           const natural = isNatural(m);
-          const isTarget = target !== null && ((m - target) % 12 + 12) % 12 === 0;
+          const isTarget = target === m;
           const top = y(m + 0.5);
           return (
             <G key={m}>
