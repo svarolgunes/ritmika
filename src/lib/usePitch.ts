@@ -18,7 +18,7 @@ type Reading = { frame: PitchFrame | null; trail: TrailPoint[] };
 const EMPTY: Reading = { frame: null, trail: [] };
 
 /**
- * Listens to the microphone and reports the pitch about 25 times a second.
+ * Listens to the microphone and reports the pitch about 40 times a second.
  * The mic is only on between start() and stop(), and it is switched off when
  * the screen loses focus or the app goes to the background.
  *

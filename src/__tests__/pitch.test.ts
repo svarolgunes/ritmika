@@ -152,10 +152,10 @@ describe('pitch tracker', () => {
     expect(Math.abs(cents(steadyHz(frames), 293.66))).toBeLessThan(5);
   });
 
-  it('produces about 25 frames a second', () => {
+  it('produces about 40 frames a second', () => {
     const frames = track(tone(440, 1));
-    expect(frames.length).toBeGreaterThanOrEqual(22);
-    expect(frames.length).toBeLessThanOrEqual(26);
+    expect(frames.length).toBeGreaterThanOrEqual(36);
+    expect(frames.length).toBeLessThanOrEqual(41);
   });
 
   it('shows nothing for silence, quiet hiss or loud noise', () => {
@@ -181,6 +181,39 @@ describe('pitch tracker', () => {
     const frames = voiced(track(tone(glide, 1, VOICE, 0.3)));
     expect(frames.length).toBeGreaterThan(18);
     for (const f of frames.slice(2)) expect(Math.abs(cents(f.hz!, glide(f.t - 0.032)))).toBeLessThan(40);
+  });
+
+  it('bridges short dropouts in a held note, but ends at real silence', () => {
+    // A held Sol3 with a 100 ms hole in the middle, then 400 ms of silence.
+    const a = tone(196, 0.5, VOICE, 0.3);
+    const b = tone(196, 0.5, VOICE, 0.3);
+    const signal = new Float32Array(a.length + SR * 0.1 + b.length + SR * 0.4);
+    signal.set(a);
+    signal.set(b, a.length + SR * 0.1);
+    const frames = track(signal);
+    const during = frames.filter((f) => f.t > 0.15 && f.t < 1.08);
+    expect(during.every((f) => f.hz !== null && Math.abs(cents(f.hz, 196)) < 10)).toBe(true);
+    expect(frames.filter((f) => f.t > 1.35).every((f) => f.hz === null)).toBe(true);
+  });
+
+  it('keeps following a note through a breathy, noisy stretch', () => {
+    const rand = lcg(11);
+    const x = tone(330, 1.2, VOICE, 0.3);
+    // From 0.4 s to 0.8 s the tone fades and gets much noisier, as at the end of a breath.
+    for (let i = Math.round(0.4 * SR); i < 0.8 * SR; i += 1) x[i] = x[i] * 0.25 + 0.05 * rand();
+    const frames = track(x).filter((f) => f.t > 0.2);
+    const voicedShare = frames.filter((f) => f.hz !== null).length / frames.length;
+    expect(voicedShare).toBeGreaterThan(0.95);
+    for (const f of voiced(frames)) expect(Math.abs(cents(f.hz!, 330))).toBeLessThan(25);
+  });
+
+  it('keeps a steady note steady', () => {
+    const rand = lcg(5);
+    // Noisy enough that raw readings jitter.
+    const x = tone(261.63, 1, VOICE, 0.2).map((v) => v + 0.03 * rand());
+    const hz = voiced(track(x)).slice(4).map((f) => f.hz!);
+    const spread = Math.max(...hz.map((h) => Math.abs(cents(h, 261.63))));
+    expect(spread).toBeLessThan(6);
   });
 
   it('ignores a one-frame octave slip', () => {
@@ -247,6 +280,7 @@ describe('match the note', () => {
 
 describe('reference tones', () => {
   // Node's fs, without needing @types/node for this one test.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs: { readFileSync(p: string): Uint8Array & { buffer: ArrayBuffer; byteOffset: number } } = require('fs');
 
   it.each([...TONE_NOTES])('tone-%i.wav is in tune at A4 = 440', (note) => {

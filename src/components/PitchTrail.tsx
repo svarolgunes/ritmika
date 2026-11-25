@@ -1,5 +1,6 @@
-import { Platform, StyleSheet, View } from 'react-native';
-import Svg, { Circle, G, Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
+import { useRef } from 'react';
+import { Platform, StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { Lang } from '../lib/i18n';
 import { isNatural, noteColor, noteName, octaveOf } from '../lib/pitch/notes';
@@ -19,7 +20,7 @@ const LABEL_FONT = Platform.OS === 'web' ? 'system-ui, -apple-system, sans-serif
  * enough to keep the newest point in view. It depends only on the trail, so the lanes move smoothly as
  * old points scroll away.
  */
-function viewCenter(trail: TrailPoint[], target: number | null): number {
+export function viewCenter(trail: TrailPoint[], target: number | null): number {
   const heard = trail.filter((p) => p.midi !== null).map((p) => p.midi!);
   let center = target ?? 66;
   if (target === null && heard.length) {
@@ -36,11 +37,31 @@ function viewCenter(trail: TrailPoint[], target: number | null): number {
   return Math.max(newest - reach, Math.min(newest + reach, center));
 }
 
+/** The lowest and highest centre the lanes can be dragged to (about Do1 … Do7). */
+export const MIN_CENTER = 30;
+export const MAX_CENTER = 96;
+
+/** A smooth curve through the points: quadratic segments between midpoints. */
+function smoothPath(pts: [number, number][]): string {
+  if (pts.length === 1) return `M ${pts[0][0]} ${pts[0][1]} l 0.1 0`;
+  let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for (let i = 1; i < pts.length - 1; i += 1) {
+    const mx = (pts[i][0] + pts[i + 1][0]) / 2;
+    const my = (pts[i][1] + pts[i + 1][1]) / 2;
+    d += ` Q ${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)} ${mx.toFixed(1)} ${my.toFixed(1)}`;
+  }
+  const last = pts[pts.length - 1];
+  return `${d} L ${last[0].toFixed(1)} ${last[1].toFixed(1)}`;
+}
+
 /**
  * The pitch of the last few seconds as a line scrolling right to left over
- * note lanes, like a singing app. The lanes follow the voice up and down, or
- * stay on the target note in the matching game. The line takes the colour
- * of the note it is nearest to.
+ * note lanes, like a singing app. The line takes the colour of the note it
+ * is nearest to.
+ *
+ * With `center` null the lanes follow the voice up and down (or stay on the
+ * target in the matching game). With a number they stay put, and dragging
+ * up or down moves smoothly through the notes and octaves via onDrag.
  */
 export function PitchTrail({
   trail,
@@ -48,16 +69,47 @@ export function PitchTrail({
   height,
   lang,
   target,
+  center,
+  onDrag,
+  onDragActive,
 }: {
   trail: TrailPoint[];
   width: number;
   height: number;
   lang: Lang;
   target: number | null;
+  center: number | null;
+  onDrag?: (center: number) => void;
+  /** True while a drag is going on, so a parent ScrollView can stand still. */
+  onDragActive?: (active: boolean) => void;
 }) {
-  const latest = trail.length ? trail[trail.length - 1] : null;
-  const low = viewCenter(trail, target) - SPAN / 2;
   const laneH = height / SPAN;
+  const dragging = center !== null && !!onDrag;
+  /** Where a drag started: finger position and lane centre. */
+  const dragStart = useRef({ y: 0, center: 0 });
+
+  // Plain responder props rather than PanResponder: only active when not following.
+  const drag = dragging
+    ? {
+        onStartShouldSetResponderCapture: () => true,
+        onMoveShouldSetResponderCapture: () => true,
+        onResponderTerminationRequest: () => false,
+        onResponderGrant: (e: GestureResponderEvent) => {
+          dragStart.current = { y: e.nativeEvent.pageY, center: center ?? 0 };
+          onDragActive?.(true);
+        },
+        onResponderMove: (e: GestureResponderEvent) => {
+          // Pulling the lanes down brings higher notes into view, like scrolling a page.
+          const dy = e.nativeEvent.pageY - dragStart.current.y;
+          onDrag?.(Math.max(MIN_CENTER, Math.min(MAX_CENTER, dragStart.current.center + dy / laneH)));
+        },
+        onResponderRelease: () => onDragActive?.(false),
+        onResponderTerminate: () => onDragActive?.(false),
+      }
+    : {};
+
+  const latest = trail.length ? trail[trail.length - 1] : null;
+  const low = (center ?? viewCenter(trail, target)) - SPAN / 2;
   const y = (midi: number) => height - (midi - low) * laneH;
   const plotW = width - LABEL_W - NOW_PAD;
   const tNow = latest?.t ?? 0;
@@ -66,33 +118,35 @@ export function PitchTrail({
   const lanes: number[] = [];
   for (let m = Math.ceil(low - 0.5); m <= Math.floor(low + SPAN + 0.5); m += 1) lanes.push(m);
 
-  // Runs of consecutive heard points with the same nearest note.
-  const runs: { color: string; points: string }[] = [];
-  let run: { color: string; pts: string[]; note: number } | null = null;
+  // Runs of consecutive heard points with the same nearest note. Each run
+  // starts at the end of the one before, so the line has no gaps.
+  const runs: { color: string; d: string }[] = [];
+  let run: { color: string; pts: [number, number][]; note: number } | null = null;
   for (const p of trail) {
     if (p.midi === null) {
-      if (run) runs.push({ color: run.color, points: run.pts.join(' ') });
+      if (run) runs.push({ color: run.color, d: smoothPath(run.pts) });
       run = null;
       continue;
     }
     const note = Math.round(p.midi);
-    const pt = `${x(p.t).toFixed(1)},${y(p.midi).toFixed(1)}`;
+    const pt: [number, number] = [x(p.t), y(p.midi)];
     if (!run || run.note !== note) {
+      const joint: [number, number] | null = run ? run.pts[run.pts.length - 1] : null;
       if (run) {
-        run.pts.push(pt); // join the runs so the line has no gaps
-        runs.push({ color: run.color, points: run.pts.join(' ') });
+        run.pts.push(pt);
+        runs.push({ color: run.color, d: smoothPath(run.pts) });
       }
-      run = { color: noteColor(note), pts: [pt], note };
+      run = { color: noteColor(note), pts: joint ? [joint, pt] : [pt], note };
     } else {
       run.pts.push(pt);
     }
   }
-  if (run) runs.push({ color: run.color, points: run.pts.join(' ') });
+  if (run) runs.push({ color: run.color, d: smoothPath(run.pts) });
 
   const nowMidi = latest?.midi ?? null;
 
   return (
-    <View style={[styles.box, { width, height }]}>
+    <View style={[styles.box, { width, height }, dragging && styles.draggable]} {...drag}>
       <Svg width={width} height={height}>
         {lanes.map((m) => {
           const natural = isNatural(m);
@@ -123,7 +177,7 @@ export function PitchTrail({
           );
         })}
         {runs.map((r, i) => (
-          <Polyline key={i} points={r.points} fill="none" stroke={r.color} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" />
+          <Path key={i} d={r.d} fill="none" stroke={r.color} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" />
         ))}
         {nowMidi !== null && (
           <Circle cx={x(tNow)} cy={y(nowMidi)} r={10} fill={noteColor(Math.round(nowMidi))} stroke="#fff" strokeWidth={3} />
@@ -135,4 +189,5 @@ export function PitchTrail({
 
 const styles = StyleSheet.create({
   box: { overflow: 'hidden', borderRadius: 16, backgroundColor: colors.surface },
+  draggable: Platform.select({ web: { cursor: 'grab', touchAction: 'none', userSelect: 'none' } as object, default: {} }),
 });

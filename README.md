@@ -38,12 +38,12 @@ The ✏️ **Düzenle / Edit** button at the top right switches the editor on an
 ### Singing and pitch (Ses)
 
 - Press 🎤 and sing, hum, whistle or play an instrument. The big note name (Do Re Mi in Turkish, C D E in English, with the octave) and a tuner needle show the note and how many cents it is flat (*pes*) or sharp (*tiz*). The face smiles when it's within 10 cents.
-- The **pitch trail** scrolls the last 6 seconds over coloured note lanes, like a karaoke or singing app. Each note has its own colour (Do red, Re orange, Mi yellow …), and the lanes follow the voice up and down.
+- The **pitch trail** scrolls the last 6 seconds over coloured note lanes, like a karaoke or singing app. Each note has its own colour (Do red, Re orange, Mi yellow …). With 🎯 *Sesi takip et / Follow my voice* on (the default) the lanes follow the voice up and down; turn it off and they stay put, and you drag the trail up and down to move smoothly through notes and octaves (Do1 to Do7). The app remembers the choice.
 - **Notayı yakala / Match the note:** pick an octave (2, 3 or 4) and tap a note from its Do to the next Do to hear it, then sing or play exactly that note and hold it in tune (±30 cents) for a second to earn a ⭐. Only the chosen octave counts: if the right note is sung an octave off, the app says to go an octave up or down. *Sıradaki / Next* goes up the scale. The app remembers the octave.
 - The microphone is only on while 🎤 is pressed, and turns off when you leave the tab or the app. Sound is analysed on the device; nothing is recorded, saved or sent.
 - Tuning reference A4 = 432, 440 (default) or 442 Hz in Settings.
 
-How it works: expo-audio's `useAudioStream` delivers live PCM from the microphone on iOS and Android (the Web Audio API with an AudioWorklet does it in the browser). `src/lib/pitch/tracker.ts` low-passes and decimates it to about 16 kHz and runs the **McLeod Pitch Method** (`src/lib/pitch/mpm.ts`, FFT-based NSDF with parabolic peak refinement) on a 64 ms window about 25 times a second, between 60 and 1500 Hz. A loudness and clarity gate hides silence and noise, an onset check and octave-jump hold remove the classic detector glitches, and light smoothing keeps the line calm without lagging a melody. It is pure TypeScript with no native code beyond expo-audio, so it runs in Expo Go.
+How it works: expo-audio's `useAudioStream` delivers live PCM from the microphone on iOS and Android (the Web Audio API with an AudioWorklet does it in the browser). `src/lib/pitch/tracker.ts` low-passes and decimates it to about 16 kHz and runs the **McLeod Pitch Method** (`src/lib/pitch/mpm.ts`, FFT-based NSDF with parabolic peak refinement) on a 64 ms window about 40 times a second, between 60 and 1500 Hz. A loudness and clarity gate with hysteresis hides silence and noise but follows a held note through quieter, breathier moments; dropouts under 150 ms are bridged; an onset check and octave-jump hold remove the classic detector glitches; and a 3-frame median plus adaptive smoothing (strong for wobbles, weak for real moves and glides) keeps the line calm without lagging a melody. The trail is drawn as a smooth connected curve. It is pure TypeScript with no native code beyond expo-audio, so it runs in Expo Go.
 
 All 11 instruments (davul, trampet, zil, tef, marakas, üçgen, tahta blok, alkış, çan, darbuka, kastanyet) the three metronome clicks and the 22 reference tones for *Match the note* (Do2 to Do5) are short WAV files synthesized by `scripts/sounds/generate.py`. They work offline and sound the same on every device.
 
@@ -85,7 +85,7 @@ src/lib/
   layout.ts              where bars and notes go on screen
   usePitch.ts            microphone on/off, pitch frames and the trail
   pitch/mpm.ts           McLeod Pitch Method detector (FFT)
-  pitch/tracker.ts       stream → steady pitch line (decimation, gates, octave fix, smoothing)
+  pitch/tracker.ts       stream → steady pitch line (decimation, gates, gap bridging, octave fix, smoothing)
   pitch/notes.ts         Hz ↔ note numbers, cents, note names and colours
   pitch/match.ts         the "match the note" game
   pitch/tones.ts         reference tones
