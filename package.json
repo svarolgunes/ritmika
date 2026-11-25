@@ -38,7 +38,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "test": "jest",
-    "sounds": "python3 scripts/sounds/generate.py"
+    "sounds": "python3 scripts/sounds/generate.py",
+    "sounds:piano": "python3 scripts/sounds/piano.py"
   },
   "private": true,
   "jest": {
