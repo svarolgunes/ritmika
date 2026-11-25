@@ -6,14 +6,18 @@
  * to 1.5 kHz, and a third of the work), keeps a sliding window, and every
  * hop runs the MPM detector on it. Each result then goes through:
  *
- * 1. A loudness and clarity gate, so silence, breath and room noise show
- *    nothing instead of a jumpy line.
+ * 1. A loudness and clarity gate with hysteresis: starting a note needs a
+ *    clear, loud enough sound, but once a note is going it is followed
+ *    through quieter and breathier moments, so a held note doesn't break up.
  * 2. An onset check: a note must be found in two frames in a row before it
  *    appears, which removes single-frame blips from consonants and clicks.
- * 3. Octave-jump correction: a sudden jump of exactly an octave is only
+ * 3. Gap bridging: when a note drops out for a moment (under 150 ms), the
+ *    line holds its last pitch instead of breaking, and carries on after.
+ * 4. Octave-jump correction: a sudden jump of exactly an octave is only
  *    believed if it lasts, because that is the classic pitch-detector error.
- * 4. Light smoothing for small changes, while big changes (a new note) go
- *    through at once, so the line is calm but never lags behind a melody.
+ * 5. A median of the last three readings, which removes single-frame
+ *    spikes, then adaptive smoothing: strong for small wobbles, weak for
+ *    real moves, so the line is calm but never lags behind a melody.
  */
 import { PitchDetector, rms } from './mpm';
 import { hzToMidi } from './notes';
@@ -33,10 +37,16 @@ export type PitchFrame = {
 export type TrackerOptions = {
   minHz?: number;
   maxHz?: number;
-  /** Quieter than this (dBFS) counts as silence. */
+  /** Quieter than this (dBFS) can't start a note. */
   minDb?: number;
-  /** Less periodic than this counts as noise. */
+  /** Less periodic than this can't start a note. */
   minClarity?: number;
+  /** Once a note is going, it is followed down to this loudness … */
+  sustainDb?: number;
+  /** … and this clarity. */
+  sustainClarity?: number;
+  /** A dropout up to this long (seconds) is bridged at the last pitch. */
+  maxGap?: number;
   /** About how often a frame comes out, in seconds. */
   hop?: number;
   /** Reference pitch for A4, for the midi field. */
@@ -48,9 +58,10 @@ const WINDOW_SECONDS = 0.064;
 const ONSET_FRAMES = 2;
 /** Frames an octave jump must last before it's believed. */
 const OCTAVE_HOLD = 3;
-/** Below this change (semitones) the line is smoothed; above it, it jumps. */
-const SMOOTH_RANGE = 0.6;
-const SMOOTHING = 0.45;
+/** Above this change (semitones) the line jumps straight to the new note. */
+const SNAP_RANGE = 1.5;
+/** Smoothing weight for the smallest changes; it rises with the size of the change. */
+const MIN_ALPHA = 0.22;
 
 export class PitchTracker {
   private readonly opts: Required<TrackerOptions>;
@@ -77,6 +88,10 @@ export class PitchTracker {
   private candidate: { midi: number; frames: number } | null = null;
   private current: number | null = null;
   private octaveSuspect: { midi: number; frames: number } | null = null;
+  /** Unvoiced frames in a row while a note is going. */
+  private missing = 0;
+  /** The last few raw readings of the current note, for the median. */
+  private recent: number[] = [];
 
   constructor(options: TrackerOptions = {}) {
     this.opts = {
@@ -84,7 +99,10 @@ export class PitchTracker {
       maxHz: options.maxHz ?? 1500,
       minDb: options.minDb ?? -50,
       minClarity: options.minClarity ?? 0.8,
-      hop: options.hop ?? 0.04,
+      sustainDb: options.sustainDb ?? -60,
+      sustainClarity: options.sustainClarity ?? 0.55,
+      maxGap: options.maxGap ?? 0.15,
+      hop: options.hop ?? 0.025,
       a4: options.a4 ?? 440,
     };
   }
@@ -97,6 +115,7 @@ export class PitchTracker {
     if (this.current !== null) this.current += shift;
     if (this.candidate) this.candidate.midi += shift;
     if (this.octaveSuspect) this.octaveSuspect.midi += shift;
+    this.recent = this.recent.map((m) => m + shift);
   }
 
   /** Forgets the line, e.g. after the mic was off for a while. */
@@ -104,6 +123,8 @@ export class PitchTracker {
     this.candidate = null;
     this.current = null;
     this.octaveSuspect = null;
+    this.missing = 0;
+    this.recent = [];
     this.filled = 0;
     this.sinceHop = 0;
   }
@@ -165,24 +186,34 @@ export class PitchTracker {
     window.set(ring.subarray(0, pos), ring.length - pos);
     const level = rms(this.window);
     const db = level > 0 ? 20 * Math.log10(level) : -120;
-    const estimate = db >= this.opts.minDb ? this.detector!.detect(this.window) : null;
+    const going = this.current !== null;
+    const minDb = going ? this.opts.sustainDb : this.opts.minDb;
+    const minClarity = going ? this.opts.sustainClarity : this.opts.minClarity;
+    const estimate = db >= minDb ? this.detector!.detect(this.window) : null;
     const clarity = estimate?.clarity ?? 0;
     const heard =
-      estimate && clarity >= this.opts.minClarity && estimate.hz >= this.opts.minHz && estimate.hz <= this.opts.maxHz
+      estimate && clarity >= minClarity && estimate.hz >= this.opts.minHz && estimate.hz <= this.opts.maxHz
         ? hzToMidi(estimate.hz, this.opts.a4)
         : null;
     const midi = this.follow(heard);
     return { t, hz: midi === null ? null : this.opts.a4 * 2 ** ((midi - 69) / 12), midi, clarity, db };
   }
 
-  /** Steps 2–4 above. */
+  /** Steps 2–5 above. */
   private follow(heard: number | null): number | null {
     if (heard === null) {
       this.candidate = null;
+      if (this.current !== null && (this.missing + 1) * this.opts.hop <= this.opts.maxGap) {
+        this.missing += 1;
+        return this.current; // bridge the dropout
+      }
       this.octaveSuspect = null;
       this.current = null;
+      this.missing = 0;
+      this.recent = [];
       return null;
     }
+    this.missing = 0;
 
     if (this.current === null) {
       if (this.candidate && Math.abs(this.candidate.midi - heard) < 1) {
@@ -193,6 +224,7 @@ export class PitchTracker {
       if (this.candidate.frames < ONSET_FRAMES) return null;
       this.candidate = null;
       this.current = heard;
+      this.recent = [heard];
       return heard;
     }
 
@@ -210,11 +242,26 @@ export class PitchTracker {
       }
       this.octaveSuspect = null;
       this.current = heard;
+      this.recent = [heard];
       return heard;
     }
     this.octaveSuspect = null;
 
-    this.current = Math.abs(jump) < SMOOTH_RANGE ? this.current + SMOOTHING * jump : heard;
+    if (Math.abs(jump) > SNAP_RANGE) {
+      // A new note: go there at once, and start the median afresh.
+      this.current = heard;
+      this.recent = [heard];
+      return heard;
+    }
+    this.recent.push(heard);
+    if (this.recent.length > 3) this.recent.shift();
+    // On a steady rise or fall (a glide) the newest reading is trusted, so the line doesn't lag.
+    const r = this.recent;
+    const monotonic = r.length < 3 || (r[0] <= r[1] && r[1] <= r[2]) || (r[0] >= r[1] && r[1] >= r[2]);
+    const target = monotonic ? heard : [...r].sort((a, b) => a - b)[1];
+    const step = target - this.current;
+    const alpha = Math.min(1, MIN_ALPHA + Math.abs(step) * 1.2);
+    this.current += alpha * step;
     return this.current;
   }
 }

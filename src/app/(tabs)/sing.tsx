@@ -2,25 +2,29 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { PitchTrail } from '../../components/PitchTrail';
+import { PitchTrail, viewCenter } from '../../components/PitchTrail';
 import { colors, radius, shadow } from '../../components/theme';
 import { TunerMeter } from '../../components/TunerMeter';
 import { Card, Chip, Header } from '../../components/ui';
 import { hapticSuccess, hapticTap } from '../../lib/feedback';
-import { matchHint, MATCH_SECONDS, NEW_MATCH, stepMatch, type MatchState } from '../../lib/pitch/match';
+import { matchHint, MATCH_OCTAVES, MATCH_SECONDS, NEW_MATCH, scaleNotes, stepMatch, type MatchState } from '../../lib/pitch/match';
 import { nearestNote, noteColor, noteName, octaveOf } from '../../lib/pitch/notes';
 import type { PitchFrame } from '../../lib/pitch/tracker';
-import { playTone, prepareTones, TONE_MS, TONE_NOTES, type ToneNote } from '../../lib/pitch/tones';
+import { playTone, prepareTones, TONE_MS } from '../../lib/pitch/tones';
 import { useSettings } from '../../lib/settings';
 import { usePitch } from '../../lib/usePitch';
 
 /** Live pitch: sing or play, and see the note, how in tune it is, and its line. */
 export default function SingScreen() {
-  const { t, lang, a4 } = useSettings();
+  const { t, lang, a4, matchOctave, followPitch, set } = useSettings();
+  const scale = scaleNotes(matchOctave);
   const [width, setWidth] = useState(0);
-  const [target, setTarget] = useState<ToneNote | null>(null);
+  const [target, setTarget] = useState<number | null>(null);
   const [match, setMatch] = useState<MatchState>(NEW_MATCH);
   const [stars, setStars] = useState(0);
+  /** Where the lanes sit when they don't follow the voice; moved by dragging. */
+  const [manualCenter, setManualCenter] = useState(66);
+  const [dragging, setDragging] = useState(false);
 
   // The game advances on every pitch frame, in the mic's callback rather than on render.
   const matchRef = useRef<MatchState>(NEW_MATCH);
@@ -50,8 +54,9 @@ export default function SingScreen() {
   const reading = frame?.midi != null ? nearestNote(frame.midi) : null;
   const color = reading ? noteColor(reading.midi) : colors.muted;
 
-  const pickTarget = (note: ToneNote) => {
+  const pickTarget = (note: number) => {
     setTarget(note);
+    if (!followPitch) setManualCenter(note);
     matchRef.current = NEW_MATCH;
     setMatch(NEW_MATCH);
     playTone(note, a4);
@@ -61,8 +66,8 @@ export default function SingScreen() {
 
   /** Up the scale, Do Re Mi …, and round again. */
   const nextTarget = () => {
-    const i = target === null ? -1 : TONE_NOTES.indexOf(target);
-    pickTarget(TONE_NOTES[(i + 1) % TONE_NOTES.length]);
+    const i = target === null ? -1 : scale.indexOf(target);
+    pickTarget(scale[(i + 1) % scale.length]);
   };
 
   let message = t.listenPrompt;
@@ -70,7 +75,7 @@ export default function SingScreen() {
   else if (status === 'error') message = t.micError;
   else if (listening && target !== null && frame?.midi != null && !match.done) {
     const h = matchHint(frame.midi, target);
-    message = h === 'inTune' ? t.inTune : h === 'higher' ? t.singHigher : t.singLower;
+    message = { inTune: t.inTune, higher: t.singHigher, lower: t.singLower, octaveUp: t.octaveUp, octaveDown: t.octaveDown }[h];
   } else if (listening && reading && Math.abs(reading.cents) <= 10) message = t.inTune;
   else if (listening) message = t.listening;
 
@@ -79,7 +84,7 @@ export default function SingScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <Header title={t.tabSing} subtitle={t.singSubtitle} right={stars > 0 ? <Text style={styles.stars}>⭐ {stars}</Text> : undefined} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} scrollEnabled={!dragging}>
         <Card style={styles.readout}>
           <View style={styles.noteBox}>
             <Text style={[styles.noteName, { color }]} numberOfLines={1} adjustsFontSizeToFit>
@@ -113,15 +118,58 @@ export default function SingScreen() {
           </View>
         </View>
 
+        <View style={styles.row}>
+          <Chip
+            small
+            label={`🎯 ${t.followPitch}`}
+            active={followPitch}
+            onPress={() => {
+              // Turning it off keeps the lanes exactly where they are now.
+              if (followPitch) setManualCenter(Math.round(viewCenter(pitch.trail, target)));
+              set({ followPitch: !followPitch });
+            }}
+          />
+          {!followPitch && <Text style={styles.dragHint}>↕ {t.dragHint}</Text>}
+        </View>
         <View style={styles.trailBox} onLayout={(e) => setWidth(Math.round(e.nativeEvent.layout.width))}>
-          {width > 0 && <PitchTrail trail={pitch.trail} width={width} height={230} lang={lang} target={target} />}
+          {width > 0 && (
+            <PitchTrail
+              trail={pitch.trail}
+              width={width}
+              height={230}
+              lang={lang}
+              target={target}
+              center={followPitch ? null : manualCenter}
+              onDrag={setManualCenter}
+              onDragActive={setDragging}
+            />
+          )}
         </View>
 
         <Card style={styles.match}>
           <Text style={styles.cardTitle}>{t.matchTitle}</Text>
           <Text style={styles.small}>{t.matchHint}</Text>
+          <View style={styles.row}>
+            <Text style={styles.octaveLabel}>{t.octave}</Text>
+            {MATCH_OCTAVES.map((o) => (
+              <Chip
+                key={o}
+                small
+                label={String(o)}
+                accessibilityLabel={`${t.octave} ${o}`}
+                active={matchOctave === o}
+                onPress={() => {
+                  if (o === matchOctave) return;
+                  set({ matchOctave: o });
+                  setTarget(null);
+                  matchRef.current = NEW_MATCH;
+                  setMatch(NEW_MATCH);
+                }}
+              />
+            ))}
+          </View>
           <View style={styles.notes}>
-            {TONE_NOTES.map((n) => {
+            {scale.map((n) => {
               const active = target === n;
               return (
                 <Pressable
@@ -139,8 +187,9 @@ export default function SingScreen() {
                     pressed && styles.pressed,
                   ]}
                 >
-                  <Text style={[styles.noteBubbleText, { color: active ? '#fff' : colors.ink }]}>{noteName(n, lang)}
-                    {n === 72 ? "'" : ''}
+                  <Text style={[styles.noteBubbleText, { color: active ? '#fff' : colors.ink }]}>
+                    {noteName(n, lang)}
+                    <Text style={[styles.noteBubbleOctave, active && { color: '#fff' }]}>{octaveOf(n)}</Text>
                   </Text>
                 </Pressable>
               );
@@ -211,6 +260,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   noteBubbleText: { fontSize: 16, fontWeight: '900' },
+  noteBubbleOctave: { fontSize: 11, fontWeight: '800', color: colors.muted },
+  dragHint: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.muted },
+  octaveLabel: { fontSize: 15, fontWeight: '800', color: colors.ink },
   progress: { height: 14, borderRadius: 7, backgroundColor: colors.border, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: radius.sm },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
