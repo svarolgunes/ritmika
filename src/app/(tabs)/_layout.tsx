@@ -30,6 +30,10 @@ export default function TabsLayout() {
         options={{ title: t.tabSing, tabBarIcon: ({ color, size }) => <Ionicons name="mic" color={String(color)} size={size} /> }}
       />
       <Tabs.Screen
+        name="ear"
+        options={{ title: t.tabEar, tabBarIcon: ({ color, size }) => <Ionicons name="ear" color={String(color)} size={size} /> }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{ title: t.tabSettings, tabBarIcon: ({ color, size }) => <Ionicons name="settings" color={String(color)} size={size} /> }}
       />
