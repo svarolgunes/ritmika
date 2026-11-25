@@ -4,13 +4,14 @@ Ritmika is a mobile app for writing and playing rhythms on percussion instrument
 
 ## What's in the app
 
-Four tabs:
+Five tabs:
 
 | Tab | What it does |
 | --- | --- |
 | **Ritim** (Rhythm) | One instrument on one stave. Pick the instrument, write a rhythm bar by bar, play it. |
 | **Topluluk** (Ensemble) | Several instruments, each on its own stave, with their bars lined up like a score. Add, mute, change or remove instruments. |
 | **Ses** (Sing) | A live pitch analyzer: sing or play into the microphone and see the note, how in tune it is, and its line over time. Includes a "match the note" game. |
+| **Kulak** (Ear) | Ear-training games on the piano: higher or lower, guess the note, guess the interval (two notes) and guess the chord, plus step-by-step training lessons with stars. |
 | **Ayarlar** (Settings) | Language (Turkish / English), metronome and note volume, tuning (A4), short how-to. |
 
 ### Play mode and edit mode
@@ -45,7 +46,19 @@ The ✏️ **Düzenle / Edit** button at the top right switches the editor on an
 
 How it works: expo-audio's `useAudioStream` delivers live PCM from the microphone on iOS and Android (the Web Audio API with an AudioWorklet does it in the browser). `src/lib/pitch/tracker.ts` low-passes and decimates it to about 16 kHz and runs the **McLeod Pitch Method** (`src/lib/pitch/mpm.ts`, FFT-based NSDF with parabolic peak refinement) on a 64 ms window about 40 times a second, between 60 and 1500 Hz. A loudness and clarity gate with hysteresis hides silence and noise but follows a held note through quieter, breathier moments; dropouts under 150 ms are bridged; an onset check and octave-jump hold remove the classic detector glitches; and a 3-frame median plus adaptive smoothing (strong for wobbles, weak for real moves and glides) keeps the line calm without lagging a melody. The trail is drawn as a smooth connected curve. It is pure TypeScript with no native code beyond expo-audio, so it runs in Expo Go.
 
-All 11 instruments (davul, trampet, zil, tef, marakas, üçgen, tahta blok, alkış, çan, darbuka, kastanyet) the three metronome clicks and the 22 reference tones for *Match the note* (Do2 to Do5) are short WAV files synthesized by `scripts/sounds/generate.py`. They work offline and sound the same on every device.
+### Ear training (Kulak)
+
+Every sound is a piano note (Sol2 to Do6), so children learn to hear real instrument tones.
+
+- **Free play** has four games, each with its own settings:
+  - **Tiz mi pes mi? / Higher or lower?** Two notes; was the second one higher, lower, or the same? Easy, medium and hard step sizes.
+  - **Notayı bul / Find the note:** a Do is played first as a starting point (can be turned off), then a note. Pick which notes can come up, from Do to the high Do, sharps included.
+  - **Aralığı bul / Find the interval:** two notes, from a minor second to an octave, going up, down, together or mixed.
+  - **Akoru bul / Find the chord:** major, minor, diminished, augmented, sus2, sus4, dominant 7, major 7 and minor 7, played together or one note at a time first.
+- **Eğitimler / Training:** 24 lessons of 10 questions in four units (higher or lower, single notes, intervals, chords). They start with the easiest contrast (Do or Sol? octave or fifth? happy major or sad minor?) and add one idea at a time. 6, 8 and 10 right earn one, two and three stars; a star opens the next lesson in the unit. Progress is saved on the device.
+- After each answer a small keyboard lights up the notes that were played, and tapping any choice plays what it would have sounded like, so a wrong guess becomes a comparison. Keys on the keyboard can be tapped too.
+
+All 11 instruments (davul, trampet, zil, tef, marakas, üçgen, tahta blok, alkış, çan, darbuka, kastanyet) the three metronome clicks and the 22 reference tones for *Match the note* (Do2 to Do5) are short WAV files synthesized by `scripts/sounds/generate.py`. The piano notes for the Ear tab come from `scripts/sounds/piano.py`, a string model with stretched overtones, three detuned strings and a two-stage decay. They work offline and sound the same on every device.
 
 Both tabs save their piece on the device and come with example rhythms (✨). The examples include a rock beat, a *Karşılama* in 9/8, a carnival groove and a waltz band.
 
@@ -54,7 +67,7 @@ Both tabs save their piece on the device and come with example rhythms (✨). Th
 ```bash
 npm install
 npx expo start        # scan the QR code with Expo Go, or press i / a / w
-npm test              # rhythm, editing, timeline, layout, preset and pitch tests
+npm test              # rhythm, editing, timeline, layout, preset, pitch and ear-training tests
 npm run typecheck
 npm run lint
 ```
@@ -68,6 +81,8 @@ src/app/                 screens (Expo Router)
   (tabs)/index.tsx       Ritim – one instrument
   (tabs)/ensemble.tsx    Topluluk – several staves
   (tabs)/sing.tsx        Ses – live pitch analyzer and "match the note"
+  (tabs)/ear/index.tsx   Kulak – training lessons and free-play games
+  (tabs)/ear/play.tsx    one guessing game or lesson
   (tabs)/settings.tsx    Ayarlar
 src/components/
   Score.tsx              the stave(s): layout, notes, beams, cursor, tap targets
@@ -77,6 +92,7 @@ src/components/
   EditorScreen.tsx       the editor screen both tabs share
   PitchTrail.tsx         the scrolling pitch line over note lanes
   TunerMeter.tsx         the flat/sharp needle
+  PianoKeys.tsx          a small keyboard that lights up notes
 src/lib/
   rhythm.ts              durations, time signatures, beaming, rest splitting
   song.ts                songs and every editing operation (pure functions)
@@ -90,10 +106,16 @@ src/lib/
   pitch/match.ts         the "match the note" game
   pitch/tones.ts         reference tones
   pitch/useMicStream*.ts live mic samples (native / web)
+  ear/game.ts            ear-training questions (pure functions)
+  ear/lessons.ts         the training path
+  ear/piano.ts           piano note player
+  ear/progress.ts        lesson stars, saved on the device
+  ear/strings.ts         the Ear tab's words (Turkish / English)
 src/data/
   instruments.ts         the instruments
   presets.ts             example rhythms in a small text notation
 scripts/sounds/generate.py   synthesizes assets/sounds/*.wav
+scripts/sounds/piano.py      synthesizes assets/sounds/piano-*.wav
 ```
 
 ### Adding example rhythms
@@ -102,7 +124,7 @@ Presets in `src/data/presets.ts` use a short text form, one bar per `|`. `w h q 
 
 ### Changing the sounds
 
-Edit a recipe in `scripts/sounds/generate.py` and run `npm run sounds` (needs `numpy`).
+Edit a recipe in `scripts/sounds/generate.py` and run `npm run sounds` (needs `numpy`). The piano is in `scripts/sounds/piano.py` (`npm run sounds:piano`).
 
 ### About timing
 
