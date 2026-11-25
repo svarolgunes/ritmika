@@ -21,7 +21,10 @@ const LABEL_FONT = Platform.OS === 'web' ? 'system-ui, -apple-system, sans-serif
  * old points scroll away.
  */
 export function viewCenter(trail: TrailPoint[], target: number | null): number {
-  const heard = trail.filter((p) => p.midi !== null).map((p) => p.midi!);
+  // In several-note mode every line counts, the dominant one last so it stays in view.
+  const heard = trail.flatMap((p) =>
+    p.voices ? [...p.voices].sort((a, b) => Number(a.dominant) - Number(b.dominant)).map((v) => v.midi) : p.midi !== null ? [p.midi] : [],
+  );
   let center = target ?? 66;
   if (target === null && heard.length) {
     const sorted = [...heard].sort((a, b) => a - b);
@@ -52,6 +55,53 @@ function smoothPath(pts: [number, number][]): string {
   }
   const last = pts[pts.length - 1];
   return `${d} L ${last[0].toFixed(1)} ${last[1].toFixed(1)}`;
+}
+
+/** A line that moves more than this between two moments (semitones) is cut, not joined. */
+const BREAK = 1;
+/** Opacity of the non-dominant lines in several-note mode. */
+const SOFT_ALPHA = 0.35;
+
+type SeriesPoint = { t: number; midi: number | null; alpha: number };
+
+/**
+ * Cuts one line's points into drawable pieces. A piece ends at silence, at
+ * a time gap, or at a jump bigger than BREAK (so a leap starts a fresh line
+ * instead of drawing a stroke across the notes in between). Within a line,
+ * a new piece starts when the nearest note or the opacity changes, joined
+ * at the same point so it looks continuous.
+ */
+function buildSegments(pts: SeriesPoint[], x: (t: number) => number, y: (m: number) => number) {
+  const out: { color: string; alpha: number; d: string }[] = [];
+  let run: { color: string; alpha: number; pts: [number, number][]; note: number } | null = null;
+  let prev: SeriesPoint | null = null;
+  const close = () => {
+    if (run) out.push({ color: run.color, alpha: run.alpha, d: smoothPath(run.pts) });
+    run = null;
+  };
+  for (const p of pts) {
+    if (p.midi === null) {
+      close();
+      prev = null;
+      continue;
+    }
+    if (prev && prev.midi !== null && (Math.abs(p.midi - prev.midi) > BREAK || p.t - prev.t > 0.12)) close();
+    const note = Math.round(p.midi);
+    const pt: [number, number] = [x(p.t), y(p.midi)];
+    const current = run as { color: string; alpha: number; pts: [number, number][]; note: number } | null;
+    if (!current) {
+      run = { color: noteColor(note), alpha: p.alpha, pts: [pt], note };
+    } else if (current.note !== note || current.alpha !== p.alpha) {
+      current.pts.push(pt);
+      close();
+      run = { color: noteColor(note), alpha: p.alpha, pts: [current.pts[current.pts.length - 2] ?? pt, pt], note };
+    } else {
+      current.pts.push(pt);
+    }
+    prev = p;
+  }
+  close();
+  return out;
 }
 
 /**
@@ -118,32 +168,30 @@ export function PitchTrail({
   const lanes: number[] = [];
   for (let m = Math.ceil(low - 0.5); m <= Math.floor(low + SPAN + 0.5); m += 1) lanes.push(m);
 
-  // Runs of consecutive heard points with the same nearest note. Each run
-  // starts at the end of the one before, so the line has no gaps.
-  const runs: { color: string; d: string }[] = [];
-  let run: { color: string; pts: [number, number][]; note: number } | null = null;
-  for (const p of trail) {
-    if (p.midi === null) {
-      if (run) runs.push({ color: run.color, d: smoothPath(run.pts) });
-      run = null;
-      continue;
-    }
-    const note = Math.round(p.midi);
-    const pt: [number, number] = [x(p.t), y(p.midi)];
-    if (!run || run.note !== note) {
-      const joint: [number, number] | null = run ? run.pts[run.pts.length - 1] : null;
-      if (run) {
-        run.pts.push(pt);
-        runs.push({ color: run.color, d: smoothPath(run.pts) });
+  // One series per line: the single pitch line, or one per voice in several-note mode.
+  const poly = trail.some((p) => p.voices !== undefined);
+  const series = new Map<number, SeriesPoint[]>();
+  if (poly) {
+    for (const p of trail) {
+      for (const v of p.voices ?? []) {
+        const list = series.get(v.id) ?? [];
+        list.push({ t: p.t, midi: v.midi, alpha: v.dominant ? 1 : SOFT_ALPHA });
+        series.set(v.id, list);
       }
-      run = { color: noteColor(note), pts: joint ? [joint, pt] : [pt], note };
-    } else {
-      run.pts.push(pt);
     }
+  } else {
+    series.set(0, trail.map((p) => ({ t: p.t, midi: p.midi, alpha: 1 })));
   }
-  if (run) runs.push({ color: run.color, d: smoothPath(run.pts) });
+  const segments = [...series.values()].flatMap((pts) => buildSegments(pts, x, y));
+  // The dominant (opaque) line on top of the others.
+  segments.sort((a, b) => a.alpha - b.alpha);
+  const dots = poly
+    ? (latest?.voices ?? []).map((v) => ({ midi: v.midi, alpha: v.dominant ? 1 : SOFT_ALPHA }))
+    : latest?.midi != null
+      ? [{ midi: latest.midi, alpha: 1 }]
+      : [];
+  dots.sort((a, b) => a.alpha - b.alpha);
 
-  const nowMidi = latest?.midi ?? null;
 
   return (
     <View style={[styles.box, { width, height }, dragging && styles.draggable]} {...drag}>
@@ -176,12 +224,12 @@ export function PitchTrail({
             </G>
           );
         })}
-        {runs.map((r, i) => (
-          <Path key={i} d={r.d} fill="none" stroke={r.color} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" />
+        {segments.map((r, i) => (
+          <Path key={i} d={r.d} fill="none" stroke={r.color} strokeOpacity={r.alpha} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" />
         ))}
-        {nowMidi !== null && (
-          <Circle cx={x(tNow)} cy={y(nowMidi)} r={10} fill={noteColor(Math.round(nowMidi))} stroke="#fff" strokeWidth={3} />
-        )}
+        {dots.map((d, i) => (
+          <Circle key={i} cx={x(tNow)} cy={y(d.midi)} r={d.alpha === 1 ? 10 : 7} fill={noteColor(Math.round(d.midi))} fillOpacity={d.alpha} stroke="#fff" strokeOpacity={d.alpha} strokeWidth={3} />
+        ))}
       </Svg>
     </View>
   );

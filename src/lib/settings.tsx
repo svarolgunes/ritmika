@@ -22,11 +22,13 @@ export type Settings = {
   matchOctave: MatchOctave;
   /** The Sing tab's note lanes follow the voice; when off, they're dragged by hand. */
   followPitch: boolean;
+  /** The Sing tab finds several notes at once (chords) and draws a line for each. */
+  polyphonic: boolean;
 };
 
 export const A4_CHOICES = [432, 440, 442] as const;
 
-const DEFAULTS: Settings = { lang: 'tr', clickVolume: 0.7, noteVolume: 1, notesAudible: true, loop: true, countIn: true, editing: false, a4: 440, matchOctave: DEFAULT_OCTAVE, followPitch: true };
+const DEFAULTS: Settings = { lang: 'tr', clickVolume: 0.7, noteVolume: 1, notesAudible: true, loop: true, countIn: true, editing: false, a4: 440, matchOctave: DEFAULT_OCTAVE, followPitch: true, polyphonic: false };
 
 type SettingsApi = Settings & { t: Strings; set: (patch: Partial<Settings>) => void };
 
@@ -49,6 +51,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           loop: typeof saved.loop === 'boolean' ? saved.loop : s.loop,
           countIn: typeof saved.countIn === 'boolean' ? saved.countIn : s.countIn,
           editing: typeof saved.editing === 'boolean' ? saved.editing : s.editing,
+          polyphonic: typeof saved.polyphonic === 'boolean' ? saved.polyphonic : s.polyphonic,
           followPitch: typeof saved.followPitch === 'boolean' ? saved.followPitch : s.followPitch,
           matchOctave: (MATCH_OCTAVES as readonly number[]).includes(saved.matchOctave as number) ? (saved.matchOctave as MatchOctave) : s.matchOctave,
           a4: (A4_CHOICES as readonly number[]).includes(saved.a4 as number) ? (saved.a4 as number) : s.a4,

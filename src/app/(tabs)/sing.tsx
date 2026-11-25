@@ -8,7 +8,7 @@ import { TunerMeter } from '../../components/TunerMeter';
 import { Card, Chip, Header } from '../../components/ui';
 import { hapticSuccess, hapticTap } from '../../lib/feedback';
 import { matchHint, MATCH_OCTAVES, MATCH_SECONDS, NEW_MATCH, scaleNotes, stepMatch, type MatchState } from '../../lib/pitch/match';
-import { nearestNote, noteColor, noteName, octaveOf } from '../../lib/pitch/notes';
+import { midiToHz, nearestNote, noteColor, noteName, octaveOf } from '../../lib/pitch/notes';
 import type { PitchFrame } from '../../lib/pitch/tracker';
 import { playTone, prepareTones, TONE_MS } from '../../lib/pitch/tones';
 import { useSettings } from '../../lib/settings';
@@ -16,7 +16,7 @@ import { usePitch } from '../../lib/usePitch';
 
 /** Live pitch: sing or play, and see the note, how in tune it is, and its line. */
 export default function SingScreen() {
-  const { t, lang, a4, matchOctave, followPitch, set } = useSettings();
+  const { t, lang, a4, matchOctave, followPitch, polyphonic, set } = useSettings();
   const scale = scaleNotes(matchOctave);
   const [width, setWidth] = useState(0);
   const [target, setTarget] = useState<number | null>(null);
@@ -51,7 +51,13 @@ export default function SingScreen() {
     prepareTones();
   }, []);
 
-  const reading = frame?.midi != null ? nearestNote(frame.midi) : null;
+  // In several-note mode the big readout shows the dominant line, and the others are listed under it.
+  const voices = polyphonic ? (frame?.voices ?? []) : [];
+  const dominant = voices.find((v) => v.dominant);
+  const shownMidi = dominant ? dominant.midi : (frame?.midi ?? null);
+  const reading = shownMidi != null ? nearestNote(shownMidi) : null;
+  const shownHz = dominant ? midiToHz(dominant.midi, a4) : frame?.hz;
+  const others = voices.filter((v) => !v.dominant).sort((p, q) => p.midi - q.midi);
   const color = reading ? noteColor(reading.midi) : colors.muted;
 
   const pickTarget = (note: number) => {
@@ -91,7 +97,14 @@ export default function SingScreen() {
               {reading ? noteName(reading.midi, lang) : '–'}
               {reading && <Text style={styles.octave}>{octaveOf(reading.midi)}</Text>}
             </Text>
-            <Text style={styles.hz}>{frame?.hz ? `${frame.hz.toFixed(1)} Hz` : ' '}</Text>
+            <Text style={styles.hz}>{shownHz ? `${shownHz.toFixed(1)} Hz` : ' '}</Text>
+            {polyphonic && (
+              <Text style={styles.others} numberOfLines={1}>
+                {others.length
+                  ? others.map((v) => `${noteName(v.midi, lang)}${octaveOf(v.midi)}`).join(' · ')
+                  : ' '}
+              </Text>
+            )}
             <Text style={styles.face}>{face}</Text>
           </View>
           <TunerMeter cents={reading ? reading.cents : null} color={color} lowLabel={t.pitchLow} highLabel={t.pitchHigh} />
@@ -129,6 +142,7 @@ export default function SingScreen() {
               set({ followPitch: !followPitch });
             }}
           />
+          <Chip small label={`🎹 ${t.polyphonic}`} active={polyphonic} onPress={() => set({ polyphonic: !polyphonic })} />
           {!followPitch && <Text style={styles.dragHint}>↕ {t.dragHint}</Text>}
         </View>
         <View style={styles.trailBox} onLayout={(e) => setWidth(Math.round(e.nativeEvent.layout.width))}>
@@ -261,7 +275,8 @@ const styles = StyleSheet.create({
   },
   noteBubbleText: { fontSize: 16, fontWeight: '900' },
   noteBubbleOctave: { fontSize: 11, fontWeight: '800', color: colors.muted },
-  dragHint: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.muted },
+  others: { fontSize: 14, fontWeight: '800', color: colors.muted, opacity: 0.8 },
+  dragHint: { flexBasis: '100%', fontSize: 13, fontWeight: '700', color: colors.muted },
   octaveLabel: { fontSize: 15, fontWeight: '800', color: colors.ink },
   progress: { height: 14, borderRadius: 7, backgroundColor: colors.border, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: radius.sm },
